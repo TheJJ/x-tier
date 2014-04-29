@@ -1,0 +1,16 @@
+*.o
+*~
+.*.swp
+\#*
+.#*
+*.a
+*.so
+*.pyc
+*.pyo
+__pycache__
+CMakeFiles
+cmake_install.cmake
+CMakeCache.txt
+callgrind.out.*
+perf.data*
+*.qcow2
