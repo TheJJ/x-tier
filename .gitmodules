@@ -1,0 +1,6 @@
+[submodule "qemu"]
+	path = qemu
+	url = git@git.sft.mx:qemu.git
+[submodule "linux"]
+	path = linux
+	url = git@git.sft.mx:linux.git
