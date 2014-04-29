@@ -1,0 +1,10 @@
+getname
+sys_open
+sys_close
+sys_getdents
+sys_stat
+sys_read
+XTIER_vfs_stat
+cp_new_stat
+sys_lseek
+d_path
