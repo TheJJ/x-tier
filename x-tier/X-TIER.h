@@ -33,10 +33,9 @@ typedef unsigned long long u64;
 
 /* Different OSs */
 #define XTIER_OS_UNKNOWN 0
-#define XTIER_OS_LINUX_64 4
-#define XTIER_OS_UBUNTU_64 1
+#define XTIER_OS_LINUX_64 1
+#define XTIER_OS_LINUX_32 2
 #define XTIER_OS_WINDOWS_7_32 3
-#define XTIER_OS_UBUNTU_32 2
 
 /* Exit Reasons */
 #define XTIER_EXIT_REASON                    (0x1337ULL << (2*8))
