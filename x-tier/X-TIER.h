@@ -37,6 +37,9 @@ typedef unsigned long long u64;
 #define XTIER_OS_LINUX_32 2
 #define XTIER_OS_WINDOWS_7_32 3
 
+/* Default OS */
+#define XTIER_OS_DEFAULT XTIER_OS_LINUX_64
+
 /* Exit Reasons */
 #define XTIER_EXIT_REASON                    (0x1337ULL << (2*8))
 #define XTIER_EXIT_REASON_DEBUG              0x1111ULL | XTIER_EXIT_REASON
