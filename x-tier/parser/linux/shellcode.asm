@@ -194,7 +194,7 @@ start:
 	call sc
 
 stack:
-	xor eax, eax      ; will be changed to string
+	nop
 
 
 ; Aufbau:
