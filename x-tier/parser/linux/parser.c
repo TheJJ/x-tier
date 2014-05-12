@@ -140,12 +140,12 @@ void error(const char *msg, ...) {
  * write a embedded binary blob to a given file.
  */
 int write_binary_blob(FILE *destination, struct embedded_binary *source) {
-	size_t write_size = (size_t)source->end - (size_t)source->start + 1;
+	size_t write_size = (size_t)source->end - (size_t)source->start;
 	printf("\t\t -> Writing binary blob (%lu bytes)...", write_size);
 
-	printf("  -> Data %p -> %p", source->start, source->end);
-	size_t i = fwrite (source->start, 1, write_size - 1, destination);
-	if (i == write_size - 1) {
+	printf(" (embedded data: %p -> %p)", source->start, source->end);
+	size_t i = fwrite (source->start, 1, write_size, destination);
+	if (i == write_size) {
 		printf(" OK!\n");
 		return 0;
 	}
@@ -690,7 +690,7 @@ void generateShellcode(const char *input_filename, const char *out_filename, u64
 	shellcode_complete_offset += (8 + (esp_patch_num * 8));
 	// Resolve
 	shellcode_complete_offset += 8 + 8 + 8 + (resolve_num * (8 + 8)) + strlen_resolve_syms;
-	printf("\t\t # COMPLETE Offset is 0x%lx\n", shellcode_complete_offset);
+	printf("\t\t # COMPLETE shellcode offset is 0x%lx\n", shellcode_complete_offset);
 
 	// Write file
 	printf("\t -> Creating File %s...", out_filename);
@@ -843,13 +843,13 @@ void generateShellcode(const char *input_filename, const char *out_filename, u64
 		   strcmp(symbols[i].str, "init_module") != 0) {
 			// Output
 			if (symbols[i].addend)
-				printf("\t\t # PATCH 0x%llx (0x%llx) will be set to '%s + 0x%llx' (0x%llx)\n",
+				printf("\t\t # PATCH 0x%llx (offset 0x%llx) will be set to '%s + 0x%llx' (0x%llx)\n",
 				       symbols[i].target_addr + shellcode_complete_offset,
 				       symbols[i].offset,
 				       symbols[i].str, symbols[i].addend,
 				       symbols[i].value + shellcode_complete_offset);
 			else
-				printf("\t\t # PATCH 0x%llx (0x%llx) will be set to '%s' (0x%llx)\n",
+				printf("\t\t # PATCH 0x%llx (offset 0x%llx) will be set to '%s' (0x%llx)\n",
 				       symbols[i].target_addr + shellcode_complete_offset,
 				       symbols[i].offset,
 				       symbols[i].str,
@@ -860,7 +860,7 @@ void generateShellcode(const char *input_filename, const char *out_filename, u64
 			writeIntReverse(inject_file, symbols[i].value + shellcode_complete_offset);
 		}
 		else if(strcmp(symbols[i].str, "printk") == 0) {
-			printf("\t\t # FUNCTION PATCH printk @ 0x%llx (0x%llx) will be set to 0x%llx\n",
+			printf("\t\t # FUNCTION PATCH printk @ 0x%llx (offset 0x%llx) will be set to 0x%llx\n",
 			       symbols[i].target_addr + shellcode_complete_offset,
 			       symbols[i].offset,
 			       orig_size + shellcode_complete_offset);
