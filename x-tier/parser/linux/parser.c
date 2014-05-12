@@ -140,7 +140,7 @@ void error(const char *msg, ...) {
  * write a embedded binary blob to a given file.
  */
 int write_binary_blob(FILE *destination, struct embedded_binary *source) {
-	size_t write_size = (size_t)source->end - (size_t)source->start;
+	size_t write_size = (size_t)source->end - (size_t)source->start + 1;
 	printf("\t\t -> Writing binary blob (%lu bytes)...", write_size);
 
 	printf("  -> Data %p -> %p", source->start, source->end);
@@ -159,7 +159,7 @@ int write_binary_blob(FILE *destination, struct embedded_binary *source) {
  * get the size of a binary blob.
  */
 size_t binblob_size(struct embedded_binary *data) {
-	return (size_t)data->end - (size_t)data->start;
+	return (size_t)data->end - (size_t)data->start + 1;
 }
 
 /*
@@ -663,24 +663,22 @@ void generateShellcode(const char *input_filename, const char *out_filename, u64
 
 	/*
 	 * Entry Point                      8
-	 * COUNT PATCH SYMS                 8 = x
+	 * PATCH SYM COUNT                  8 = x
 	 * Per PATCH Symbol                 x *
 	 *      Target Addr                     8
 	 *      Value                           8
-	 *                                      -
-	 *                                      16
-	 * COUNT ESP PATCH SYMS             8 = e
+	 * ESP PATCH SYMS COUNT             8 = e
 	 * Per ESP PATCH SYM                e *
 	 *      Target Addr                 8
 	 *
 	 * Systemmap Begin                  8
 	 * Systemmap End                    8
-	 * COUNT RESOLVE SYMS               8 = y
+	 * RESOLVE SYMS COUNT               8 = y
 	 * Per RESOLVE Symbol               y *
 	 *      Length of String                8
 	 *      String Variable Length          z
 	 *      Target Addr                     8
-	 *                                      -
+	 *                                      =
 	 *                                      y * 16 + z1 + z2 ... zN
 	 *
 	 *  TOTAL: 8 + 8 + x * 16 + 8 + 8  + e * 8 + 8 + 8 + 8 + y * 16 + z1 + z2 ... zN
