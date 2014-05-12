@@ -14,3 +14,4 @@ CMakeCache.txt
 callgrind.out.*
 perf.data*
 *.qcow2
+.gdb_history
