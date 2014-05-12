@@ -1116,7 +1116,6 @@ int main(int argc, char *argv[])
 	}
 	else {
 		input_file_name = argv[optind];
-		printf("=> input @%d = %s\n", optind, input_file_name);
 	}
 
 	// Generate Filename
