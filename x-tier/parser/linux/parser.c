@@ -568,7 +568,7 @@ struct wrapper *getWrapperNames(void)
 	return w;
 }
 
-void generateShellcode(const char *input_filename, const char *out_filename, u64 orig_size,
+void generateShellcode(const char *input_filename, const char *out_filename, u64 elf_size,
                        u64 system_map_begin, u64 system_map_end) {
 	int i, j;
 	u64 resolve_num = 0;
@@ -583,7 +583,7 @@ void generateShellcode(const char *input_filename, const char *out_filename, u64
 	char *out_wrapper_file = NULL;
 	char *tmp = NULL;
 	char nop[] = "\x90\x90\x90\x90\x90\x90\x90\x90\x90\x90"; //10
-	char orig_data[orig_size];
+	char orig_data[elf_size];
 
 	u32 wrapper_size = 0;
 	char *wrapper_tmp_name = NULL;
@@ -803,21 +803,21 @@ void generateShellcode(const char *input_filename, const char *out_filename, u64
 			printf("\t\t\t <> Found Kernel ESP Offset @ 0x%llx...\n", wrapper_esp_offset);
 
 			// Add address to esp patch symbols
-			printf("\t\t\t <> Kernel Stack address will be written to 0x%llx...\n", (shellcode_complete_offset + orig_size + printf_shellcode_size + wrapper_size + wrapper_esp_offset));
+			printf("\t\t\t <> Kernel Stack address will be written to 0x%llx...\n", (shellcode_complete_offset + elf_size + printf_shellcode_size + wrapper_size + wrapper_esp_offset));
 
-			wrapper_esp_addresses[wrapper_number] = shellcode_complete_offset + orig_size + printf_shellcode_size+ wrapper_size + wrapper_esp_offset;
+			wrapper_esp_addresses[wrapper_number] = shellcode_complete_offset + elf_size + printf_shellcode_size+ wrapper_size + wrapper_esp_offset;
 
 			// Substitute the original call within the module with the call to the wrapper
 			printf("\t\t\t <> '%s' @ 0x%llx will be set to 0x%llx...\n", symbols[i].str,
 			       symbols[i].target_addr + shellcode_complete_offset,
-			       shellcode_complete_offset + orig_size + printf_shellcode_size + wrapper_size + wrapper_esp_offset + 0x10);
+			       shellcode_complete_offset + elf_size + printf_shellcode_size + wrapper_size + wrapper_esp_offset + 0x10);
 
 			wrapper_patch_addresses_target[wrapper_number] = symbols[i].target_addr + shellcode_complete_offset;
-			wrapper_patch_addresses_value[wrapper_number] = shellcode_complete_offset + orig_size + printf_shellcode_size + wrapper_size + wrapper_esp_offset + 0x10;
+			wrapper_patch_addresses_value[wrapper_number] = shellcode_complete_offset + elf_size + printf_shellcode_size + wrapper_size + wrapper_esp_offset + 0x10;
 
 			// Fix Target address - We assume a fixed offset here - Ignore complete offset,
 			// by the resolve offset part
-			symbols[i].target_addr = orig_size + printf_shellcode_size + wrapper_size + wrapper_esp_offset + 8;
+			symbols[i].target_addr = elf_size + printf_shellcode_size + wrapper_size + wrapper_esp_offset + 8;
 
 			// Update wrapper size
 			wrapper_size += wrapper_stats.st_size;
@@ -863,10 +863,10 @@ void generateShellcode(const char *input_filename, const char *out_filename, u64
 			printf("\t\t # FUNCTION PATCH printk @ 0x%llx (offset 0x%llx) will be set to 0x%llx\n",
 			       symbols[i].target_addr + shellcode_complete_offset,
 			       symbols[i].offset,
-			       orig_size + shellcode_complete_offset);
+			       elf_size + shellcode_complete_offset);
 
 			writeIntReverse(inject_file, symbols[i].target_addr + shellcode_complete_offset);
-			writeIntReverse(inject_file, orig_size + shellcode_complete_offset);
+			writeIntReverse(inject_file, elf_size + shellcode_complete_offset);
 		}
 	}
 
@@ -936,9 +936,9 @@ void generateShellcode(const char *input_filename, const char *out_filename, u64
 				}
 
 				// copy original file
-				j = fwrite (base_ptr, 1, orig_size, inject_mcount_file);
+				j = fwrite (base_ptr, 1, elf_size, inject_mcount_file);
 
-				if(j != orig_size)
+				if(j != elf_size)
 					error("An error occurred while writing the binary.\n");
 
 				fclose(inject_mcount_file);
@@ -980,22 +980,22 @@ void generateShellcode(const char *input_filename, const char *out_filename, u64
 	//try to open mcount file, otherwise just copy the original kernel module contents
 	if ((inject_mcount_file = fopen(out_mcount_file, "rb")) == NULL) {
 		printf(" copying original kernel module contents... ");
-		i = fwrite (base_ptr, 1, orig_size, inject_file);
+		i = fwrite (base_ptr, 1, elf_size, inject_file);
 	}
 	else {
 		printf(" using mcount file as kernel module source: %s... ", out_mcount_file);
 
-		i = fread (orig_data, 1, orig_size, inject_mcount_file);
+		i = fread (orig_data, 1, elf_size, inject_mcount_file);
 
-		if(i != orig_size)
+		if(i != elf_size)
 			error("An error occurred while reading the mcount file.\n");
 
 		fclose(inject_mcount_file);
 
 		// Write data
-		i = fwrite (orig_data, 1, orig_size, inject_file);
+		i = fwrite (orig_data, 1, elf_size, inject_file);
 
-		if(i == orig_size)
+		if(i == elf_size)
 			printf("OK!\n");
 		else
 			error("An error occurred while writing the binary.\n");
