@@ -190,11 +190,12 @@ exit:
 	call rax
 	hlt                ; VMI exit
 
+	nop
+
 start:
 	call sc
 
 stack:
-	nop
 
 
 ; Aufbau:

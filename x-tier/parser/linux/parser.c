@@ -575,7 +575,7 @@ void generateShellcode(const char *input_filename, const char *out_filename, u64
 	u64 strlen_resolve_syms = 0;
 	u64 patch_num = 0;
 	u64 esp_patch_num = 0;
-	u32 shellcode_complete_offset = 0;
+	u32 shellcode_data_length = 0;
 	FILE *inject_file = NULL;
 	FILE *inject_mcount_file = NULL;
 	FILE *inject_wrapper_file = NULL;
@@ -659,7 +659,7 @@ void generateShellcode(const char *input_filename, const char *out_filename, u64
 	printf("\t -> Outfile will be %s\n", out_filename);
 
 	// Calulcate Shellcode offsets
-	printf("\t -> Calculating Offsets...\n");
+	printf("\t -> Calculating shellcode data length...\n");
 
 	/*
 	 * Entry Point                      8
@@ -685,12 +685,12 @@ void generateShellcode(const char *input_filename, const char *out_filename, u64
 	 */
 
 	// Patch Syms
-	shellcode_complete_offset = 8 + 8 + ((patch_num + esp_patch_num) * (8 + 8));
+	shellcode_data_length = 8 + 8 + ((patch_num + esp_patch_num) * (8 + 8));
 	// ESP Patch Syms
-	shellcode_complete_offset += (8 + (esp_patch_num * 8));
+	shellcode_data_length += (8 + (esp_patch_num * 8));
 	// Resolve
-	shellcode_complete_offset += 8 + 8 + 8 + (resolve_num * (8 + 8)) + strlen_resolve_syms;
-	printf("\t\t # COMPLETE shellcode offset is 0x%lx\n", shellcode_complete_offset);
+	shellcode_data_length += 8 + 8 + 8 + (resolve_num * (8 + 8)) + strlen_resolve_syms;
+	printf("\t\t # COMPLETE shellcode offset/length is 0x%lx = %lu\n", shellcode_data_length, shellcode_data_length);
 
 	// Write file
 	printf("\t -> Creating File %s...", out_filename);
@@ -712,7 +712,7 @@ void generateShellcode(const char *input_filename, const char *out_filename, u64
 	// Entry Point
 	printf("\t -> Calculating NEW Entry Point...");
 	// Resolve sym 2 DW - Begin Map, End Map 2 DW - Count 1 DW - Strlen Syms
-	entry_point += shellcode_complete_offset;
+	entry_point += shellcode_data_length;
 	printf("OK! Entry Point @ 0x%llx\n", entry_point);
 
 	printf("\t -> Writing Entry Point... ");
@@ -803,17 +803,17 @@ void generateShellcode(const char *input_filename, const char *out_filename, u64
 			printf("\t\t\t <> Found Kernel ESP Offset @ 0x%llx...\n", wrapper_esp_offset);
 
 			// Add address to esp patch symbols
-			printf("\t\t\t <> Kernel Stack address will be written to 0x%llx...\n", (shellcode_complete_offset + elf_size + printf_shellcode_size + wrapper_size + wrapper_esp_offset));
+			printf("\t\t\t <> Kernel Stack address will be written to 0x%llx...\n", (shellcode_data_length + elf_size + printf_shellcode_size + wrapper_size + wrapper_esp_offset));
 
-			wrapper_esp_addresses[wrapper_number] = shellcode_complete_offset + elf_size + printf_shellcode_size+ wrapper_size + wrapper_esp_offset;
+			wrapper_esp_addresses[wrapper_number] = shellcode_data_length + elf_size + printf_shellcode_size+ wrapper_size + wrapper_esp_offset;
 
 			// Substitute the original call within the module with the call to the wrapper
 			printf("\t\t\t <> '%s' @ 0x%llx will be set to 0x%llx...\n", symbols[i].str,
-			       symbols[i].target_addr + shellcode_complete_offset,
-			       shellcode_complete_offset + elf_size + printf_shellcode_size + wrapper_size + wrapper_esp_offset + 0x10);
+			       symbols[i].target_addr + shellcode_data_length,
+			       shellcode_data_length + elf_size + printf_shellcode_size + wrapper_size + wrapper_esp_offset + 0x10);
 
-			wrapper_patch_addresses_target[wrapper_number] = symbols[i].target_addr + shellcode_complete_offset;
-			wrapper_patch_addresses_value[wrapper_number] = shellcode_complete_offset + elf_size + printf_shellcode_size + wrapper_size + wrapper_esp_offset + 0x10;
+			wrapper_patch_addresses_target[wrapper_number] = symbols[i].target_addr + shellcode_data_length;
+			wrapper_patch_addresses_value[wrapper_number] = shellcode_data_length + elf_size + printf_shellcode_size + wrapper_size + wrapper_esp_offset + 0x10;
 
 			// Fix Target address - We assume a fixed offset here - Ignore complete offset,
 			// by the resolve offset part
@@ -844,29 +844,29 @@ void generateShellcode(const char *input_filename, const char *out_filename, u64
 			// Output
 			if (symbols[i].addend)
 				printf("\t\t # PATCH 0x%llx (offset 0x%llx) will be set to '%s + 0x%llx' (0x%llx)\n",
-				       symbols[i].target_addr + shellcode_complete_offset,
+				       symbols[i].target_addr + shellcode_data_length,
 				       symbols[i].offset,
 				       symbols[i].str, symbols[i].addend,
-				       symbols[i].value + shellcode_complete_offset);
+				       symbols[i].value + shellcode_data_length);
 			else
 				printf("\t\t # PATCH 0x%llx (offset 0x%llx) will be set to '%s' (0x%llx)\n",
-				       symbols[i].target_addr + shellcode_complete_offset,
+				       symbols[i].target_addr + shellcode_data_length,
 				       symbols[i].offset,
 				       symbols[i].str,
-				       symbols[i].value + shellcode_complete_offset);
+				       symbols[i].value + shellcode_data_length);
 
 			// Write
-			writeIntReverse(inject_file, symbols[i].target_addr + shellcode_complete_offset);
-			writeIntReverse(inject_file, symbols[i].value + shellcode_complete_offset);
+			writeIntReverse(inject_file, symbols[i].target_addr + shellcode_data_length);
+			writeIntReverse(inject_file, symbols[i].value + shellcode_data_length);
 		}
 		else if(strcmp(symbols[i].str, "printk") == 0) {
 			printf("\t\t # FUNCTION PATCH printk @ 0x%llx (offset 0x%llx) will be set to 0x%llx\n",
-			       symbols[i].target_addr + shellcode_complete_offset,
+			       symbols[i].target_addr + shellcode_data_length,
 			       symbols[i].offset,
-			       elf_size + shellcode_complete_offset);
+			       elf_size + shellcode_data_length);
 
-			writeIntReverse(inject_file, symbols[i].target_addr + shellcode_complete_offset);
-			writeIntReverse(inject_file, elf_size + shellcode_complete_offset);
+			writeIntReverse(inject_file, symbols[i].target_addr + shellcode_data_length);
+			writeIntReverse(inject_file, elf_size + shellcode_data_length);
 		}
 	}
 
@@ -897,11 +897,11 @@ void generateShellcode(const char *input_filename, const char *out_filename, u64
 	free(wrapper_patch_addresses_value);
 
 	// Symmap
-	printf("\t -> Writing Symmap begin... 0x%08llx ", system_map_begin);
+	printf("\t -> Writing Symmap begin... 0x%016llx ", system_map_begin);
 	writeIntReverse(inject_file, system_map_begin);
 	printf("OK!\n");
 
-	printf("\t -> Writing Symmap end... 0x%08llx ", system_map_end);
+	printf("\t -> Writing Symmap end...   0x%016llx ", system_map_end);
 	writeIntReverse(inject_file, system_map_end);
 	printf("OK!\n");
 
@@ -916,11 +916,11 @@ void generateShellcode(const char *input_filename, const char *out_filename, u64
 		   strcmp(symbols[i].str, "printk") != 0)
 		{
 			printf("\t\t # RESOLVE %s @ 0x%llx must be resolved...\n", symbols[i].str,
-			       symbols[i].target_addr + shellcode_complete_offset);
+			       symbols[i].target_addr + shellcode_data_length);
 
 			writeIntReverse(inject_file, (symbols[i].str_len + 1)); // Str Len
 			fwrite(symbols[i].str, 1, symbols[i].str_len + 1, inject_file); // Str
-			writeIntReverse(inject_file, symbols[i].target_addr + shellcode_complete_offset); // Target
+			writeIntReverse(inject_file, symbols[i].target_addr + shellcode_data_length); // Target
 		}
 		else if(symbols[i].resolve && strcmp(symbols[i].str, "mcount") == 0)
 		{
