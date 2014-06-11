@@ -1075,8 +1075,8 @@ int main(int argc, char *argv[])
 	int option = 0;
 
 	//TODO: remove hardcoding
-	u64 sysmap_begin = 0xffffffff8175e010;  //__start___ksymtab
-	u64 sysmap_end   = 0xffffffff81775f50;  //__stop___ksymtab_gpl
+	u64 sysmap_begin = 0xffffffff8175e250;  //__start___ksymtab
+	u64 sysmap_end   = 0xffffffff81776190;  //__stop___ksymtab_gpl
 
 	// Parse options
 	while ((option = getopt_long (argc, argv, "hw:d:e:i:o:", options, &option_index)) != -1)
