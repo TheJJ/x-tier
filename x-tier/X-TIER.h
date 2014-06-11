@@ -85,9 +85,9 @@ enum arg_type
  */
 enum injection_type
 {
-    VARIABLE = 0,
-    CONSOLIDATED = 1,
-    CONSOLIDATED_ARGS = 2,
+    VARIABLE          = 0x0,
+    CONSOLIDATED      = 0x1,  //last bit: consolidated
+    CONSOLIDATED_ARGS = 0x2,
 };
 
 /**
@@ -195,7 +195,7 @@ struct XTIER_performance
  * @param module The full path to the module that should be injected.
  *               The path must be shorter than 256 characters.
  */
-struct injection * new_injection(const char *module);
+struct injection *new_injection(const char *module);
 
 /**
  * Creates a new injection structure from the given file descriptor.
@@ -206,7 +206,7 @@ struct injection * new_injection(const char *module);
  * @param fd The file pointer to read from.
  * @returns A pointer to the injection structure or NULL.
  */
-struct injection * injection_from_fd(int fd);
+struct injection *injection_from_fd(int fd);
 
 /**
  * Write the given injection structure to a file descriptor.
@@ -271,7 +271,7 @@ unsigned int injection_size(struct injection *injection);
  * @param injection The injection structure to consolidate.
  * @returns A pointer to a consolidated injection structure.
  */
-struct injection * consolidate(struct injection *injection);
+struct injection *consolidate(struct injection *injection);
 
 /**
  * The arguments of the given injection structure are freed and a new
@@ -282,7 +282,7 @@ struct injection * consolidate(struct injection *injection);
  * @returns A pointer to an injection structure with consolidated
  *          arguments.
  */
-struct injection * consolidate_args(struct injection *injection);
+struct injection *consolidate_args(struct injection *injection);
 
 /**
  * Load the binary data of the module that is specified by
@@ -303,7 +303,7 @@ void injection_load_code(struct injection *injection);
  *                  obtained.
  * @returns A pointer to the injection_args structure or NULL.
  */
-struct injection_args * get_injection_args(struct injection *injection);
+struct injection_args *get_injection_args(struct injection *injection);
 
 /**
  * Get the next injection argument of an injection structure. Notice that
@@ -316,7 +316,7 @@ struct injection_args * get_injection_args(struct injection *injection);
  *            first argument of the injection structure will be returned.
  * @returns A pointer to the injection_arg structure or NULL.
  */
-struct injection_arg * get_next_arg(struct injection *injection,
+struct injection_arg *get_next_arg(struct injection *injection,
                                     struct injection_arg *arg);
 
 /**
@@ -330,7 +330,7 @@ struct injection_arg * get_next_arg(struct injection *injection,
  *            last argument of the injection structure will be returned.
  * @returns A pointer to the injection_arg structure or NULL.
  */
-struct injection_arg * get_prev_arg(struct injection *injection,
+struct injection_arg *get_prev_arg(struct injection *injection,
                                     struct injection_arg *arg);
 
 /**
@@ -341,7 +341,7 @@ struct injection_arg * get_prev_arg(struct injection *injection,
  * @param arg The injection_arg structure that contains the argument.
  * @returns A pointer to the data of the argument.
  */
-char * get_arg_data(struct injection *injection, struct injection_arg *arg);
+char *get_arg_data(struct injection *injection, struct injection_arg *arg);
 
 /**
  * Add a char argument to an injection structure. The new argument

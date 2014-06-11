@@ -3,8 +3,7 @@
 // the preprocessor macros DO_KERNEL_BUILD or DO_USERSPACE_BUILD
 // have to be defined
 
-#ifdef DO_USERSPACE_BUILD
-//#    warning "running userland code compilation for xtier base code."
+#if defined(DO_USERSPACE_BUILD)
 #    include <fcntl.h>
 
 #    include <stdlib.h>
@@ -13,10 +12,12 @@
 #    include <unistd.h>
 
 #    include <sys/stat.h>
-#else
-//#    warning "running kernel code build for xtier base code."
+#elif defined(DO_KERNEL_BUILD)
 #    include <linux/string.h>
 #    include <linux/slab.h>
+
+#else
+#error "don't compile this file directly"
 #endif
 
 #include "X-TIER.h"
@@ -52,7 +53,7 @@
 #define INJECTION_ERROR 2
 #define INJECTION_CRITICAL 1
 
-#define DEBUG_LEVEL 4
+#define DEBUG_LEVEL 6
 
 #define msg_print(level, level_string, fmt, ...)	  \
 	do { if (DEBUG_LEVEL >= level) PRINT("[ Injection - %s ] %d : %s(): " fmt, \
@@ -76,8 +77,7 @@ static void insert_arg(struct injection *injection, struct injection_arg *arg)
 	struct injection_args *args = injection->args;
 	struct injection_arg *tmp_arg = NULL;
 
-	if (!injection->args)
-	{
+	if (!injection->args) {
 		PRINT_ERROR("Injection structures does not have an argument structure!\n");
 		return;
 	}
@@ -85,8 +85,7 @@ static void insert_arg(struct injection *injection, struct injection_arg *arg)
 	// Insert
 	tmp_arg = args->args;
 
-	if (!tmp_arg)
-	{
+	if (!tmp_arg) {
 		// List is empty
 		arg->next = arg;
 		arg->prev = arg;
@@ -95,19 +94,15 @@ static void insert_arg(struct injection *injection, struct injection_arg *arg)
 	}
 
 	// Find its place
-	for (i = 0; i < args->argc; i++, tmp_arg = tmp_arg->next)
-	{
-		//
-		if (tmp_arg->number > arg->number)
-		{
+	for (i = 0; i < args->argc; i++, tmp_arg = tmp_arg->next) {
+		if (tmp_arg->number > arg->number) {
 			// New element goes here
 			arg->next = tmp_arg;
 			arg->prev = tmp_arg->prev;
 			tmp_arg->prev = arg;
 			arg->prev->next = arg;
 		}
-		else if (i + 1 == args->argc)
-		{
+		else if (i + 1 == args->argc) {
 			// Last slot
 			arg->next = tmp_arg->next;
 			arg->prev = tmp_arg;
@@ -123,30 +118,30 @@ static void insert_arg(struct injection *injection, struct injection_arg *arg)
  * +=========================================================
  */
 
-//unsigned int injection_size(struct injection *injection);
-
-struct injection_args * get_injection_args(struct injection *injection)
+struct injection_args *get_injection_args(struct injection *injection)
 {
-	if (injection->type == CONSOLIDATED)
-	{
-		return (struct injection_args *)(((char *)injection) +
-		                                 sizeof(struct injection) +
-		                                 injection->path_len +
-		                                 injection->code_len);
+	if (injection->type & (CONSOLIDATED | CONSOLIDATED_ARGS)) {
+		return (struct injection_args *)
+			(((char *)injection) + sizeof(struct injection) + injection->path_len + injection->code_len);
 	}
-
-	return injection->args;
+	else {
+		return injection->args;
+	}
 }
 
-static struct injection_arg * get_first_injection_arg(struct injection *injection)
+static struct injection_arg *get_first_injection_arg(struct injection *injection)
 {
 	struct injection_args *args = get_injection_args(injection);
 
-	if (!args)
+	if (!args) {
 		return NULL;
+	}
 
-	if ((injection->type & (CONSOLIDATED | CONSOLIDATED_ARGS)))
-	{
+	if (args->argc == 0) {
+		return NULL;
+	}
+
+	if ((injection->type & (CONSOLIDATED | CONSOLIDATED_ARGS))) {
 		// We use pointer arithmetic here. args + 1 should point
 		// directly behind the injection_args structure!
 		return (struct injection_arg *)(args + 1);
@@ -155,27 +150,31 @@ static struct injection_arg * get_first_injection_arg(struct injection *injectio
 	return args->args;
 }
 
-static struct injection_arg * get_last_injection_arg(struct injection *injection)
+static struct injection_arg *get_last_injection_arg(struct injection *injection)
 {
 	struct injection_args *args = get_injection_args(injection);
 
-	if (!args)
+	if (!args) {
 		return NULL;
-
-	if ((injection->type & (CONSOLIDATED | CONSOLIDATED_ARGS)))
-	{
-		return (struct injection_arg *)(((char *)args) +
-		                                (injection->args_size -
-		                                 injection->size_last_arg));
 	}
 
-	if (!args->args)
+	if (args->argc == 0) {
+		return NULL;
+	}
+
+	if ((injection->type & (CONSOLIDATED | CONSOLIDATED_ARGS))) {
+		return (struct injection_arg *)(((char *)args) + (injection->args_size - injection->size_last_arg));
+	}
+
+	if (!args->args) {
 		return args->args;
-	else
+	}
+	else {
 		return args->args->prev;
+	}
 }
 
-struct injection_arg * get_next_arg(struct injection *injection,
+struct injection_arg *get_next_arg(struct injection *injection,
                                     struct injection_arg *arg)
 {
 	// If arg is NULL we return the first arg
@@ -190,22 +189,22 @@ struct injection_arg * get_next_arg(struct injection *injection,
 	return arg->next;
 }
 
-struct injection_arg * get_prev_arg(struct injection *injection,
+struct injection_arg *get_prev_arg(struct injection *injection,
                                     struct injection_arg *arg)
 {
 	// If arg is NULL we return the first arg
-	if (!arg)
+	if (!arg) {
 		return get_last_injection_arg(injection);
+	}
 
-	if ((injection->type & (CONSOLIDATED | CONSOLIDATED_ARGS)))
-	{
+	if ((injection->type & (CONSOLIDATED | CONSOLIDATED_ARGS))) {
 		return (struct injection_arg *)(((char *)arg) - sizeof(struct injection_arg) - arg->size_prev);
 	}
 
 	return arg->prev;
 }
 
-char * get_arg_data(struct injection *injection, struct injection_arg *arg)
+char *get_arg_data(struct injection *injection, struct injection_arg *arg)
 {
 	if ((injection->type & (CONSOLIDATED | CONSOLIDATED_ARGS)))
 	{
@@ -313,33 +312,33 @@ void injection_load_code(struct injection *injection)
 	PRINT_ERROR("Loading code is not supported in kernel mode!\n");
 #endif
 }
+static void new_injection_args(struct injection *injection);
 
-struct injection *new_injection(const char *module)
+struct injection *new_injection(const char *module_name)
 {
 	struct injection *result = (struct injection *)MALLOC(sizeof(struct injection));
 
-	if (!result)
-	{
+	if (!result) {
 		PRINT_ERROR("Could not allocated memory!\n");
 		return result;
 	}
 
 	// Name
-	injection_set_module_name(result, module);
+	injection_set_module_name(result, module_name);
 
 	// Generals
-	result->code = NULL;
-	result->code_len = 0;
-	result->event_based = 0;
-	result->event_address = NULL;
+	result->code                 = NULL;
+	result->code_len             = 0;
+	result->event_based          = 0;
+	result->event_address        = NULL;
 	result->exit_after_injection = 1;
-	result->auto_inject = 0;
-	result->time_inject = 0;
+	result->auto_inject          = 0;
+	result->time_inject          = 0;
 
-	// Set Pointer
-	result->args_size = 0;
+	// injection arguments
+	result->args_size     = 0;
 	result->size_last_arg = 0;
-	result->args = NULL;
+	new_injection_args(result);
 
 	// Set Type
 	result->type = VARIABLE;
@@ -354,42 +353,35 @@ void injection_to_fd(struct injection *injection, int fd)
 #ifdef DO_USERSPACE_BUILD
 	unsigned int size = 0;
 
-	if (!injection)
-	{
+	if (!injection) {
 		PRINT_ERROR("Given injection pointer is NULL!\n");
 		return;
 	}
 
-	if (injection->type != CONSOLIDATED)
-	{
+	if (injection->type != CONSOLIDATED) {
 		PRINT_ERROR("Only consolidated structures can be written to an fd!\n");
 		return;
 	}
 
 	// Write the injection struct
-	if (write(fd, injection, sizeof(struct injection)) !=
-	    sizeof(struct injection))
-	{
+	if (write(fd, injection, sizeof(struct injection)) != sizeof(struct injection)) {
 		PRINT_ERROR("Could not write injection struct!\n");
 		return;
 	}
 
 	// Write data
 	size = injection_size(injection) - sizeof(struct injection);
-	if (write(fd, (((char *)injection) + sizeof(struct injection)), size) != size)
-	{
+	if (write(fd, (((char *)injection) + sizeof(struct injection)), size) != size) {
 		PRINT_ERROR("Could not write injection data!\n");
 		return;
 	}
 
 #else
-
 	PRINT_ERROR("Loading code is not supported in kernel mode!\n");
-
 #endif
 }
 
-struct injection * injection_from_fd(int fd)
+struct injection *injection_from_fd(int fd)
 {
 #ifdef DO_USERSPACE_BUILD
 	struct injection injection;
@@ -399,9 +391,7 @@ struct injection * injection_from_fd(int fd)
 
 	// Obtain the injection struct
 	PRINT_DEBUG_FULL("Obtaining the injection struct...\n");
-	if ((ret = read(fd, &injection, sizeof(struct injection))) !=
-	    sizeof(struct injection))
-	{
+	if ((ret = read(fd, &injection, sizeof(struct injection))) != sizeof(struct injection)) {
 		PRINT_ERROR("Could not obtain injection struct! (read %d bytes instead of %ld bytes)\n",
 		            ret, sizeof(struct injection));
 		return NULL;
@@ -411,8 +401,7 @@ struct injection * injection_from_fd(int fd)
 	size = injection_size(&injection);
 	result = (struct injection *)MALLOC(size);
 
-	if (!result)
-	{
+	if (!result) {
 		PRINT_ERROR("Could not allocated memory!\n");
 		return NULL;
 	}
@@ -423,8 +412,7 @@ struct injection * injection_from_fd(int fd)
 	// Get remaining data from fd
 	PRINT_DEBUG_FULL("Obtaining injection data...\n");
 	size -= sizeof(struct injection);
-	if ((ret = read(fd, (((char *)result) + sizeof(struct injection)), size)) != size)
-	{
+	if ((ret = read(fd, (((char *)result) + sizeof(struct injection)), size)) != size) {
 		PRINT_ERROR("Could not obtain injection data! (read %d bytes instead of %d bytes)\n",
 		            ret, size);
 	}
@@ -447,8 +435,7 @@ static void new_injection_args(struct injection *injection)
 {
 	injection->args = (struct injection_args *)MALLOC(sizeof(struct injection_args));
 
-	if (!injection->args)
-	{
+	if (!injection->args) {
 		PRINT_ERROR("Could not allocated memory!\n");
 		return;
 	}
@@ -458,7 +445,7 @@ static void new_injection_args(struct injection *injection)
 	injection->args_size = sizeof(struct injection_args);
 }
 
-static struct injection_arg * new_injection_arg(void)
+static struct injection_arg *new_injection_arg(void)
 {
 	struct injection_arg *result = (struct injection_arg *)MALLOC(sizeof(struct injection_arg));
 
@@ -489,14 +476,11 @@ static void free_injection_args(struct injection *injection)
 	args = get_injection_args(injection);
 
 	// Free args
-	if (args)
-	{
-		if (!(injection->type & CONSOLIDATED_ARGS))
-		{
+	if (args) {
+		if (!(injection->type & CONSOLIDATED_ARGS)) {
 			cur = get_first_injection_arg(injection);
 
-			for (i = 0; i < args->argc; ++i)
-			{
+			for (i = 0; i < args->argc; ++i) {
 				next = cur->next;
 
 				FREE(cur->data);
@@ -512,16 +496,15 @@ static void free_injection_args(struct injection *injection)
 
 void free_injection(struct injection *injection)
 {
-	if (!(injection->type & CONSOLIDATED))
-	{
+	if (!(injection->type & (CONSOLIDATED | CONSOLIDATED_ARGS))) {
 		free_injection_args(injection);
 		FREE(injection->module_path);
 		FREE(injection->code);
 	}
 
-
 	FREE(injection);
 }
+
 
 void free_injection_without_code(struct injection *injection)
 {
@@ -533,6 +516,7 @@ void free_injection_without_code(struct injection *injection)
 
 	FREE(injection);
 }
+
 
 /*
  * +=========================================================
@@ -558,28 +542,31 @@ unsigned int injection_size(struct injection *injection)
 	return total_size;
 }
 
+// Fixes the argument pointers in a consolidated injection structure
 static void consolidated_update_arg_pointers(struct injection *injection)
 {
 	struct injection_arg *cur, *prev, *last = NULL;
 
-	// ARG
-	if (injection->args)
-	{
-		last = get_last_injection_arg(injection);
-		cur = get_first_injection_arg(injection);
-		prev = last;
+	if (injection->args) {
+		last                  = get_last_injection_arg(injection);
+		cur                   = get_first_injection_arg(injection);
+		prev                  = last;
 		injection->args->args = cur;
 
-		do
-		{
-			// Set prev
+		if (!cur) {
+			//no arguments stored.
+			return;
+		}
+
+		do {
+			// Set previous arg ptr
 			cur->prev = prev;
 			prev->next = cur;
 
-			// Set data
+			// store arg data ptr
 			cur->data = get_arg_data(injection, cur);
 
-			// Get next
+			// move onto the next arg
 			prev = cur;
 			cur = get_next_arg(injection, cur);
 		}
@@ -591,19 +578,20 @@ static void consolidated_update_arg_pointers(struct injection *injection)
 static void consolidated_update_pointers(struct injection *injection)
 {
 	// Structure consolidated?
-	if (injection->type != CONSOLIDATED)
-	{
+	if (injection->type != CONSOLIDATED) {
 		PRINT_WARNING("This is not a consolidated injection structure!\n");
 		return;
 	}
 
 	// Name pointer
-	if (injection->path_len)
+	if (injection->path_len) {
 		injection->module_path = ((char *)injection) + sizeof(struct injection);
+	}
 
 	// Code pointer
-	if (injection->code_len)
+	if (injection->code_len) {
 		injection->code = ((char *)injection->module_path) + injection->path_len;
+	}
 
 	// ARGS
 	injection->args = get_injection_args(injection);
@@ -617,51 +605,50 @@ static void consolidated_update_pointers(struct injection *injection)
  * funciton can be used. Further the function does _NOT_ update the type of the injection
  * structure nor the original unconsolidated arguments.
  */
-static struct injection_args * _consolidate_args(struct injection *injection, char *consolidated_data)
+static struct injection_args * _consolidate_args(struct injection *injection, char *consolidated_data_dest_ptr)
 {
 	struct injection_args *result = NULL;
 	struct injection_args *args = NULL;
 	struct injection_arg *arg = NULL;
 	unsigned int i = 0;
 
-	if ((args = get_injection_args(injection)))
-	{
+	if ((args = get_injection_args(injection))) {
 		// Update
-		result = (struct injection_args *)consolidated_data;
+		result = (struct injection_args *)consolidated_data_dest_ptr;
 
 		// Set & Copy Args
-		memcpy(consolidated_data, args, sizeof(struct injection_args));
-		((struct injection_args *)consolidated_data)->args = NULL;
+		memcpy(consolidated_data_dest_ptr, args, sizeof(struct injection_args));
+		((struct injection_args *)consolidated_data_dest_ptr)->args = NULL;
 
-		consolidated_data += sizeof(struct injection_args);
+		consolidated_data_dest_ptr += sizeof(struct injection_args);
 
 		// Copy each arg
 		arg = get_first_injection_arg(injection);
-		for (i = 0; i < args->argc; arg = get_next_arg(injection, arg), ++i)
-		{
-			memcpy(consolidated_data, arg, sizeof(struct injection_arg));
-			((struct injection_arg *)consolidated_data)->next = NULL;
-			((struct injection_arg *)consolidated_data)->prev = NULL;
-			((struct injection_arg *)consolidated_data)->data = NULL;
 
-			consolidated_data += sizeof(struct injection_arg);
+		for (i = 0; i < args->argc; arg = get_next_arg(injection, arg), ++i) {
+			memcpy(consolidated_data_dest_ptr, arg, sizeof(struct injection_arg));
 
-			memcpy(consolidated_data, arg->data, arg->size);
-			consolidated_data += arg->size;
+			((struct injection_arg *)consolidated_data_dest_ptr)->next = NULL;
+			((struct injection_arg *)consolidated_data_dest_ptr)->prev = NULL;
+			((struct injection_arg *)consolidated_data_dest_ptr)->data = NULL;
+
+			consolidated_data_dest_ptr += sizeof(struct injection_arg);
+
+			memcpy(consolidated_data_dest_ptr, arg->data, arg->size);
+			consolidated_data_dest_ptr += arg->size;
 		}
 	}
 
 	return result;
 }
 
-struct injection * consolidate_args(struct injection *injection)
+struct injection *consolidate_args(struct injection *injection)
 {
 	char *consolidated_data = NULL;
 	struct injection_args *consolidated_args = NULL;
 
 	// Is this structure already consolidated?
-	if (injection->type == CONSOLIDATED || injection->type == CONSOLIDATED_ARGS)
-	{
+	if (injection->type & CONSOLIDATED) {
 		PRINT_WARNING("Injection structure already consolidated! Aborting!\n");
 		return injection;
 	}
@@ -669,8 +656,7 @@ struct injection * consolidate_args(struct injection *injection)
 	// Allocate memory
 	consolidated_data = (char *)MALLOC(injection->args_size);
 
-	if (!consolidated_data)
-	{
+	if (!consolidated_data) {
 		PRINT_ERROR("Could not allocated memory!\n");
 		return injection;
 	}
@@ -689,23 +675,25 @@ struct injection * consolidate_args(struct injection *injection)
 	return injection;
 }
 
-struct injection * consolidate(struct injection *injection)
+struct injection *consolidate(struct injection *injection)
 {
 	char *consolidated_data = NULL;
 	struct injection *result = NULL;
 
 	// Is this structure already consolidated?
-	if (injection->type == CONSOLIDATED)
-	{
+	if (injection->type & (CONSOLIDATED | CONSOLIDATED_ARGS)) {
 		PRINT_WARNING("Injection structure already consolidated! Aborting!\n");
 		return injection;
 	}
 
-	// Allocate memory
+	if (injection->code_len <= 0) {
+		PRINT_WARNING("Injection code length is <= 0\n");
+	}
+
+	// Allocate memory for the whole injection blob
 	consolidated_data = (char *)MALLOC(injection_size(injection));
 
-	if (!consolidated_data)
-	{
+	if (!consolidated_data) {
 		PRINT_ERROR("Could not allocated memory!\n");
 		return injection;
 	}
@@ -752,31 +740,20 @@ static void add_argument(struct injection *injection, unsigned int number,
 	struct injection_args *args = injection->args;
 
 	// Cannot add arguments to a consolidated type
-	if (injection->type == CONSOLIDATED)
-	{
+	if (injection->type & (CONSOLIDATED | CONSOLIDATED_ARGS)) {
 		PRINT_ERROR("Injection structure is consolidated! Cannot add new arguments!\n");
 		return;
 	}
 
-	// Do we already have args?
-	if (!args)
-	{
-		new_injection_args(injection);
-		args = injection->args;
-
-		// How about now?
-		if (!args)
-		{
-			PRINT_ERROR("An error occurred while allocating the arguments structure!\n");
-			return;
-		}
+	if (!args) {
+		PRINT_ERROR("Injection arguments are nullptr, wtf?\n");
+		return;
 	}
 
 	// Create arg
 	arg = new_injection_arg();
 
-	if (!arg)
-	{
+	if (!arg) {
 		PRINT_ERROR("An error occurred while allocating the argument!\n");
 		return;
 	}
@@ -788,17 +765,14 @@ static void add_argument(struct injection *injection, unsigned int number,
 
 	// Set data
 	// We store all NUMERIC data types in 8 bytes of memory
-	if (size >= 8)
-	{
+	if (size >= 8) {
 		arg->data = (char *)MALLOC(size * sizeof(char));
 	}
-	else
-	{
+	else {
 		arg->data = (char *)MALLOC(8 * sizeof(char));
 	}
 
-	if (!arg->data)
-	{
+	if (!arg->data) {
 		PRINT_ERROR("An error occurred while allocating space for the data of the argument!\n");
 		return;
 	}
@@ -818,10 +792,12 @@ static void add_argument(struct injection *injection, unsigned int number,
 
 static unsigned int next_free_arg_number(struct injection *injection)
 {
-	if (!injection->args)
+	if (!injection->args) {
 		return 1;
-	else
+	}
+	else {
 		return (injection->args->argc + 1);
+	}
 }
 
 /*
@@ -952,8 +928,7 @@ static void print_arguments(struct injection *injection)
 	unsigned int argc = 0;
 	unsigned int i = 0;
 
-	if (!get_injection_args(injection))
-	{
+	if (!get_injection_args(injection)) {
 		PRINT("Injection structure has no arguments.\n");
 		return;
 	}
