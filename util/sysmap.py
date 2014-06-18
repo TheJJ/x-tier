@@ -17,6 +17,8 @@ import argparse
 #prefix used for prepending all symbol names.
 prefix = "lnx_"
 
+string_prefix = "str_"
+
 
 #use only symbols of type d,r,t, see man 1 nm for that.
 pat = re.compile(r"([0-9a-fA-F]*)\s([%s])\s([_a-zA-Z0-9]*)" % ("rRdDtT"))
@@ -26,6 +28,7 @@ p = argparse.ArgumentParser(description="converts nm-formatted system maps to c 
 p.add_argument("input_filename")
 p.add_argument("output_filename")
 p.add_argument("-c", "--create-funcs", default=False, action="store_true")
+p.add_argument("-s", "--create-strings", default=False, action="store_true")
 
 args = p.parse_args()
 
@@ -58,9 +61,14 @@ with open(args.input_filename, "r") as infile:
                     #create function
                     output += " ((void (*)())%s)\n" % (addr_ul)
                 else:
-                    output += " %s       // section %s\n" % (addr_ul, stype)
+                    output += " %s\n" % (addr_ul)
+
+
+                if args.create_strings:
+                    output += "#define %s%s%s \"0x%s\"\n" % (string_prefix, prefix, cname, address)
 
                 outfile.write(output)
+
 
             numentries += 1
             print("\rprocessed " + str(numentries) + " entries", end="")
