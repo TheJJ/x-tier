@@ -9,8 +9,12 @@ corecount = $(shell nproc)
 CFLAGS="-O2 -g -march=native"
 CXXFLAGS=$(CFLAGS)
 
-parser_path = x-tier/parser/linux/
-parser = $(parser_path)/inject-parser
+parser_path  = x-tier/parser/linux/
+parser       = $(parser_path)/inject-parser
+wrapper_path = x-tier/wrapper/linux64/
+
+#pass sysmap filename as parameter pls
+SYSMAP = /pass/me/pls
 
 all: emulator kernel arrshell
 
@@ -26,14 +30,26 @@ arrshell:
 configure:
 	(cd $(emulator)/ && CFLAGS=$(CFLAGS) ./configure --python=$(shell which python3) --target-list=x86_64-softmmu --enable-kvm)
 
-run: kernel emulator testmodule
+run: kernel emulator
 	./run
 
+.PHONY: configure run arrshell
+
+
+tmp:
+	@mkdir -p tmp/
+
+tmp/sysmap.h: util/sysmap.py tmp
+	./$< --create-strings $(SYSMAP) $@
+
 .PHONY: $(parser)
-$(parser):
+$(parser): wrappers
 	make -C $(parser_path)
 
-testmodule: $(parser)
-	$(parser) -o /tmp/lsmod.inject -d x-tier/wrapper/linux64/ -w x-tier/parser/linux/wrapper.txt x-tier/modules/linux/modules/default/lsmod.ko
+.PHONY: wrappers
+wrappers: tmp/sysmap.h
+	make -C $(wrapper_path)
 
-.PHONY: configure run testmodule arrshell
+
+/tmp/lsmod.inject: $(parser)
+	$< -o $@ -d $(WRAPPER_DIR) -w $(WRAPPER_DIR)/wrappers.txt x-tier/modules/linux/modules/lsmod.ko
