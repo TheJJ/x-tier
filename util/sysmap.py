@@ -25,6 +25,7 @@ pat = re.compile(r"([0-9a-fA-F]*)\s([%s])\s([_a-zA-Z0-9]*)" % ("rRdDtT"))
 p = argparse.ArgumentParser(description="converts nm-formatted system maps to c headers")
 p.add_argument("input_filename")
 p.add_argument("output_filename")
+p.add_argument("-c", "--create-funcs", default=False, action="store_true")
 
 args = p.parse_args()
 
@@ -53,7 +54,7 @@ with open(args.input_filename, "r") as infile:
                 output = "#define %s%s" % (prefix, cname)
                 addr_ul = "0x%sUL" % address
 
-                if stype == "t":
+                if args.create_funcs and stype == "t":
                     #create function
                     output += " ((void (*)())%s)\n" % (addr_ul)
                 else:
