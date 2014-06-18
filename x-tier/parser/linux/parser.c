@@ -127,13 +127,12 @@ char *base_ptr;         // ptr to our object in memory
 /*
  * FUNCTIONS
  */
-void error(const char *msg, ...) {
+void error(const char *fmt, ...) {
 	va_list va;
-	va_start(va, msg);
-
-	// Format String right here. Enjoy!
-	printf(msg, va);
-	exit(-1);
+	va_start(va, fmt);
+	printf(fmt, va);
+	va_end(va);
+	exit(1);
 }
 
 /**
@@ -490,7 +489,7 @@ void writeIntReverse(FILE *fp, u64 data) {
  * Get the offset within the text section of the kernel_esp variable.
  * We thereby assume kernel_esp is the first variable within .text.
  */
-u64 getKernelEspOffset(char *filename)
+u64 getKernelEspOffset(const char *filename)
 {
 	FILE *wrapper;
 	char cmd[2048];
@@ -726,8 +725,8 @@ void generateShellcode(const char *input_filename, const char *out_filename, u64
 		printf("\t -> Generating WRAPPER file '%s' for %llu external function(s)...\n", out_wrapper_file, esp_patch_num);
 
 		// Reserve space
-		wrapper_esp_addresses = (u64 *)malloc(sizeof(u64) * esp_patch_num);
-		wrapper_patch_addresses_value = (u64 *)malloc(sizeof(u64) * esp_patch_num);
+		wrapper_esp_addresses          = (u64 *)malloc(sizeof(u64) * esp_patch_num);
+		wrapper_patch_addresses_value  = (u64 *)malloc(sizeof(u64) * esp_patch_num);
 		wrapper_patch_addresses_target = (u64 *)malloc(sizeof(u64) * esp_patch_num);
 
 		if (!wrapper_esp_addresses || !wrapper_patch_addresses_value || !wrapper_patch_addresses_target)
@@ -754,14 +753,13 @@ void generateShellcode(const char *input_filename, const char *out_filename, u64
 			printf("\t\t # Trying to find a WRAPPER for '%s'...\n", symbols[i].str);
 
 			// Try to find wrapper
-			// Reserve space for name: wrapper_path/sym_name/sym_name\0
-			wrapper_tmp_name = (char *)malloc(sizeof(char) * (strlen(symbols[i].str) * 2 + strlen(wrapper_path) + 2));
+			// Reserve space for name: wrapper_path/sym_name.elf\0
+			wrapper_tmp_name = (char *)malloc(sizeof(char) * (strlen(wrapper_path) + strlen(symbols[i].str) + 5));
 
 			// Build name
 			strcpy(wrapper_tmp_name, wrapper_path);
 			strcat(wrapper_tmp_name, symbols[i].str);
-			strcat(wrapper_tmp_name, "/");
-			strcat(wrapper_tmp_name, symbols[i].str);
+			strcat(wrapper_tmp_name, ".elf");
 
 			if ((wrapper_fd = open(wrapper_tmp_name, O_RDONLY)) < 0) {
 				printf("\nERROR: Could not open file '%s'\n", wrapper_tmp_name);
@@ -1150,32 +1148,31 @@ int main(int argc, char *argv[])
 
 	// Print settings
 	printf("\n\t X-TIER Linux Kernel Module Parser\n");
-	printf("\t\t |_ Processing File:           '%s'\n", input_file_name);
+	printf("\t\t |_ Input File:                '%s'\n", input_file_name);
 
 	if (init_function) {
 		printf("\t\t |_ Init Function:             '%s'\n", init_function);
 	}
+
 	printf("\t\t |_ Wrappers are specified in: '%s'\n", wrapper_file);
 	printf("\t\t |_ Wrappers are located at:   '%s'\n", wrapper_path);
 	printf("\t\t |_ Resulting file will be:    '%s'\n\n", output_file_name);
 
-	if((fd = open(input_file_name, O_RDONLY)) < 0)
-		error("Could not open file '%s'\n", input_file_name);
+	if ((fd = open(input_file_name, O_RDONLY)) < 0) {
+		error("Could not open input file '%s'\n", input_file_name);
+	}
 
-	if((fstat(fd, &elf_stats)))
-	{
+	if ((fstat(fd, &elf_stats))) {
 		close(fd);
 		error("Could not fstat file\n");
 	}
 
-	if((base_ptr = (char *) malloc(elf_stats.st_size)) == NULL)
-	{
+	if ((base_ptr = (char *) malloc(elf_stats.st_size)) == NULL) {
 		close(fd);
 		error("Could not reserve memory\n");
 	}
 
-	if((read(fd, base_ptr, elf_stats.st_size)) < elf_stats.st_size)
-	{
+	if ((read(fd, base_ptr, elf_stats.st_size)) < elf_stats.st_size) {
 		close(fd);
 		free(base_ptr);
 		error("Could not read file\n");
@@ -1184,8 +1181,9 @@ int main(int argc, char *argv[])
 
 
 	/* Check libelf version first */
-	if(elf_version(EV_CURRENT) == EV_NONE)
+	if (elf_version(EV_CURRENT) == EV_NONE) {
 		error("LIBELF initialization failed!\n");
+	}
 
 
 	elf_header = (Elf32_Ehdr *) base_ptr;   // point elf_header at our object in memory
