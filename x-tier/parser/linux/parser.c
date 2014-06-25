@@ -18,6 +18,8 @@
 #include <stdarg.h>
 #include <getopt.h>
 
+#include "../../../tmp/sysmap.h"
+
 /*
  * TYPEDEFS
  */
@@ -136,10 +138,17 @@ void error(const char *fmt, ...) {
 }
 
 /**
+ * get the size of a binary blob.
+ */
+size_t binblob_size(struct embedded_binary *data) {
+	return (size_t)data->end - (size_t)data->start;
+}
+
+/**
  * write a embedded binary blob to a given file.
  */
 int write_binary_blob(FILE *destination, struct embedded_binary *source) {
-	size_t write_size = (size_t)source->end - (size_t)source->start;
+	size_t write_size = binblob_size(source);
 	printf("\t\t -> Writing binary blob (%lu bytes)...", write_size);
 
 	printf(" (embedded data: %p -> %p)", source->start, source->end);
@@ -152,13 +161,6 @@ int write_binary_blob(FILE *destination, struct embedded_binary *source) {
 		error(" Error!\n");
 		return 1;
 	}
-}
-
-/**
- * get the size of a binary blob.
- */
-size_t binblob_size(struct embedded_binary *data) {
-	return (size_t)data->end - (size_t)data->start + 1;
 }
 
 /*
@@ -485,6 +487,13 @@ void writeIntReverse(FILE *fp, u64 data) {
 
 }
 
+
+
+u64 get_text_offset(const char *filename) {
+	//TODO: get offset of the .text section for the given filename
+}
+
+
 /*
  * Get the offset within the text section of the kernel_esp variable.
  * We thereby assume kernel_esp is the first variable within .text.
@@ -495,7 +504,10 @@ u64 getKernelEspOffset(const char *filename)
 	char cmd[2048];
 	u64 result = 0;
 
+	//TODO: kernel esp offset calculation: .text + (sym.kernel_esp - .text)
+
 	// Build command
+	//TODO: max filename length...
 	sprintf(cmd, "objdump -h %s | grep .text | awk '{print $6}'", filename);
 
 	// Execute
@@ -511,8 +523,9 @@ u64 getKernelEspOffset(const char *filename)
 		error("Could not obtain the location of the kernel_esp variable!\n");
 		return 0;
 	}
-	else
+	else {
 		return result;
+	}
 }
 
 struct wrapper *getWrapperNames(void)
@@ -596,10 +609,15 @@ void generateShellcode(const char *input_filename, const char *out_filename, u64
 	u64 wrapper_esp_offset = 0;
 	struct wrapper *w = NULL;
 
+	u64 n = 0;
+
 	size_t printf_shellcode_size = binblob_size(&printf_shellcode);
 
 	// Go!
 	printf("Generating Injection File...\n");
+
+	printf("\t -> elf kernel module size: %d\n", elf_size);
+	printf("\t -> printk shelcode size: %d\n", printf_shellcode_size);
 
 	// Parse wrapper
 	printf("\t -> Parsing wrapper names from '%s'... ", wrapper_file);
@@ -800,18 +818,21 @@ void generateShellcode(const char *input_filename, const char *out_filename, u64
 			wrapper_esp_offset = getKernelEspOffset(wrapper_tmp_name);
 			printf("\t\t\t <> Found Kernel ESP Offset @ 0x%llx...\n", wrapper_esp_offset);
 
+			//TODO: use symbol offset for kernel_esp
 			// Add address to esp patch symbols
-			printf("\t\t\t <> Kernel Stack address will be written to 0x%llx...\n", (shellcode_data_length + elf_size + printf_shellcode_size + wrapper_size + wrapper_esp_offset));
+			n = (shellcode_data_length + elf_size + printf_shellcode_size + wrapper_size + wrapper_esp_offset);
+			printf("\t\t\t <> Kernel Stack address will be written to 0x%llx...\n", n);
+			wrapper_esp_addresses[wrapper_number] = n;
 
-			wrapper_esp_addresses[wrapper_number] = shellcode_data_length + elf_size + printf_shellcode_size+ wrapper_size + wrapper_esp_offset;
+			//TODO: use wrapper entry point as jump destination for call redirection
+			n += 0x10;  //16, works when kernel_esp exists 16 bytes before the .text section
 
 			// Substitute the original call within the module with the call to the wrapper
 			printf("\t\t\t <> '%s' @ 0x%llx will be set to 0x%llx...\n", symbols[i].str,
-			       symbols[i].target_addr + shellcode_data_length,
-			       shellcode_data_length + elf_size + printf_shellcode_size + wrapper_size + wrapper_esp_offset + 0x10);
+			       symbols[i].target_addr + shellcode_data_length, n);
 
 			wrapper_patch_addresses_target[wrapper_number] = symbols[i].target_addr + shellcode_data_length;
-			wrapper_patch_addresses_value[wrapper_number] = shellcode_data_length + elf_size + printf_shellcode_size + wrapper_size + wrapper_esp_offset + 0x10;
+			wrapper_patch_addresses_value[wrapper_number] = n;
 
 			// Fix Target address - We assume a fixed offset here - Ignore complete offset,
 			// by the resolve offset part
@@ -1008,8 +1029,7 @@ void generateShellcode(const char *input_filename, const char *out_filename, u64
 	}
 
 	// Open and write wrapper file
-	if(esp_patch_num > 0)
-	{
+	if(esp_patch_num > 0) {
 		printf("\t -> Writing Remaining Wrapper Section... ");
 		inject_wrapper_file = fopen(out_wrapper_file, "rb");
 
@@ -1033,10 +1053,13 @@ void generateShellcode(const char *input_filename, const char *out_filename, u64
 
 		i = fwrite (wrapper_tmp_file, 1, wrapper_size, inject_file);
 
-		if(i == wrapper_size)
+		if (i == wrapper_size) {
 			printf("OK!\n");
-		else
+			unlink(out_wrapper_file);
+		}
+		else {
 			error("\nERROR: An error occurred while writing the wrapper section.\n");
+		}
 	}
 
 	fclose(inject_file);
@@ -1073,8 +1096,8 @@ int main(int argc, char *argv[])
 	int option = 0;
 
 	//TODO: remove hardcoding
-	u64 sysmap_begin = 0xffffffff8175e250;  //__start___ksymtab
-	u64 sysmap_end   = 0xffffffff81776190;  //__stop___ksymtab_gpl
+	u64 sysmap_begin = lnx___start___ksymtab;     //0xffffffff8175e250;
+	u64 sysmap_end   = lnx___stop___ksymtab_gpl;  //0xffffffff81776190;
 
 	// Parse options
 	while ((option = getopt_long (argc, argv, "hw:d:e:i:o:", options, &option_index)) != -1)
