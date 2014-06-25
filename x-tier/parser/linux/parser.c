@@ -20,6 +20,12 @@
 
 #include "../../../tmp/sysmap.h"
 
+
+#define ERROR(fmt, ...) \
+	printf(fmt, ##__VA_ARGS__); \
+	exit(1); \
+
+
 /*
  * TYPEDEFS
  */
@@ -158,7 +164,7 @@ int write_binary_blob(FILE *destination, struct embedded_binary *source) {
 		return 0;
 	}
 	else {
-		error(" Error!\n");
+		ERROR(" Error!\n");
 		return 1;
 	}
 }
@@ -171,7 +177,7 @@ void incScnArray(struct scn_array *a) {
 	u32 *tmp = (u32 *)malloc(sizeof(u32) * (a->max_entries + 10));
 
 	if (!tmp) {
-		error("Could not allocate memory to increase Scn Array size!\n");
+		ERROR("Could not allocate memory to increase Scn Array size!\n");
 	}
 
 	// Copy
@@ -301,7 +307,7 @@ void resolveSymbol(u32 index, struct symbol *my_sym) {
 		my_sym->str = malloc(sizeof(char) * (my_sym->str_len + 1));
 
 		if (!my_sym->str) {
-			error("Could not allocate memory for string!");
+			ERROR("Could not allocate memory for string!");
 		}
 
 		// Copy
@@ -343,7 +349,7 @@ void resolveSymbol(u32 index, struct symbol *my_sym) {
 			my_sym->str = malloc(sizeof(char) * (my_sym->str_len + 1));
 
 			if (!my_sym->str) {
-				error("Could not allocate memory for string!");
+				ERROR("Could not allocate memory for string!");
 			}
 
 			// Copy
@@ -374,7 +380,7 @@ void parseRelaSections() {
 		symbol_count = 0;
 
 		if (!symbols) {
-			error("Could not reserve memory for symbols!\n");
+			ERROR("Could not reserve memory for symbols!\n");
 		}
 	}
 
@@ -428,12 +434,12 @@ void parseRelaSections() {
 			if (str)
 				str_len = strlen(str);
 			else
-				error("Found RELA section with no name!\n");
+				ERROR("Found RELA section with no name!\n");
 
 			str_copy = malloc(sizeof(char) * (str_len + 1));
 
 			if (!str_copy) {
-				error("Could not allocate memory for string copy!\n");
+				ERROR("Could not allocate memory for string copy!\n");
 			}
 
 			strcpy(str_copy, str);
@@ -515,12 +521,12 @@ u64 getKernelEspOffset(const char *filename)
 
 	// Check
 	if (!wrapper) {
-		error("Could not execute command %s\n", cmd);
+		ERROR("Could not execute command %s\n", cmd);
 	}
 
 	// Read data
 	if (fscanf(wrapper, "%llx", &result) <= 0) {
-		error("Could not obtain the location of the kernel_esp variable!\n");
+		ERROR("Could not obtain the location of the kernel_esp variable!\n");
 		return 0;
 	}
 	else {
@@ -537,11 +543,10 @@ struct wrapper *getWrapperNames(void)
 	struct wrapper *w = malloc(sizeof(struct wrapper));
 
 	if (!w)
-		error("Could not allocate memory for the wrapper structure!\n");
+		ERROR("Could not allocate memory for the wrapper structure!\n");
 
 	if (!f) {
-		printf("Could not open wrapper file ('%s')!\n", wrapper_file);
-		error("");
+		ERROR("Could not open wrapper file ('%s')!\n", wrapper_file);
 	}
 
 	// Get the number of lines
@@ -554,7 +559,7 @@ struct wrapper *getWrapperNames(void)
 	w->wrapper = malloc(w->size * sizeof(char *));
 
 	if (!w->wrapper)
-		error("Could not allocate memory for the wrapper array!\n");
+		ERROR("Could not allocate memory for the wrapper array!\n");
 
 	// Get each wrapper
 	fseek (f, 0, SEEK_SET);
@@ -564,7 +569,7 @@ struct wrapper *getWrapperNames(void)
 		current_wrapper = malloc(sizeof(char) * strlen(line) + 1);
 
 		if (!current_wrapper)
-			error("Could not allocate memory for an individual wrapper!\n");
+			ERROR("Could not allocate memory for an individual wrapper!\n");
 
 		strcpy(current_wrapper, line);
 
@@ -616,8 +621,8 @@ void generateShellcode(const char *input_filename, const char *out_filename, u64
 	// Go!
 	printf("Generating Injection File...\n");
 
-	printf("\t -> elf kernel module size: %d\n", elf_size);
-	printf("\t -> printk shelcode size: %d\n", printf_shellcode_size);
+	printf("\t -> elf kernel module size: %llu\n", elf_size);
+	printf("\t -> printk shelcode size: %zu\n", printf_shellcode_size);
 
 	// Parse wrapper
 	printf("\t -> Parsing wrapper names from '%s'... ", wrapper_file);
@@ -714,8 +719,7 @@ void generateShellcode(const char *input_filename, const char *out_filename, u64
 	inject_file = fopen(out_filename, "wb+");
 
 	if (!inject_file) {
-		printf(" Could not open file '%s'\n", out_filename);
-		error("");
+		ERROR(" Could not open file '%s'\n", out_filename);
 	}
 	printf(" OK!\n");
 
@@ -723,7 +727,7 @@ void generateShellcode(const char *input_filename, const char *out_filename, u64
 	printf("\t -> Writing Shellcode ...\n");
 
 	if (0 != write_binary_blob(inject_file, &shellcode)) {
-		error("An error occurred while writing the shellcode.\n");
+		ERROR("An error occurred while writing the shellcode.\n");
 	}
 
 	// Entry Point
@@ -748,7 +752,7 @@ void generateShellcode(const char *input_filename, const char *out_filename, u64
 		wrapper_patch_addresses_target = (u64 *)malloc(sizeof(u64) * esp_patch_num);
 
 		if (!wrapper_esp_addresses || !wrapper_patch_addresses_value || !wrapper_patch_addresses_target)
-			error("\nERROR: Could not reserve memory for the wrapper addresses!\n");
+			ERROR("\nERROR: Could not reserve memory for the wrapper addresses!\n");
 	}
 	else
 		printf("\t -> No external functions detected. No wrappers necessary.\n");
@@ -759,8 +763,7 @@ void generateShellcode(const char *input_filename, const char *out_filename, u64
 	inject_wrapper_file = fopen(out_wrapper_file, "wb");
 
 	if (!inject_wrapper_file) {
-		printf("Could not open wrapper file '%s'!\n", out_wrapper_file);
-		error("");
+		ERROR("Could not open wrapper file '%s'!\n", out_wrapper_file);
 	}
 
 	for (i = 0; i < symbol_count; i++) {
@@ -780,30 +783,28 @@ void generateShellcode(const char *input_filename, const char *out_filename, u64
 			strcat(wrapper_tmp_name, ".elf");
 
 			if ((wrapper_fd = open(wrapper_tmp_name, O_RDONLY)) < 0) {
-				printf("\nERROR: Could not open file '%s'\n", wrapper_tmp_name);
-				error("");
+				ERROR("\nERROR: Could not open file '%s'\n", wrapper_tmp_name);
 			}
 
 			printf("\t\t\t <> Found Wrapper '%s'...\n", wrapper_tmp_name);
 
 			if ((fstat(wrapper_fd, &wrapper_stats))) {
 				close(wrapper_fd);
-				printf("\nERROR: Could not open file '%s'\n", wrapper_tmp_name);
-				error("");
+				ERROR("\nERROR: Could not open file '%s'\n", wrapper_tmp_name);
 			}
 
 			if ((wrapper_tmp_file = (char *) malloc(wrapper_stats.st_size)) == NULL) {
 				close(wrapper_fd);
-				error("\nERROR: Could not reserve memory to store wrapper file.\n");
+				ERROR("\nERROR: Could not reserve memory to store wrapper file.\n");
 			}
 
 			printf("\t\t\t <> Reading Wrapper...\n");
 
 			if ((read(wrapper_fd, wrapper_tmp_file, wrapper_stats.st_size)) < wrapper_stats.st_size) {
 				close(fd);
-				free(wrapper_tmp_name);
 				free(wrapper_tmp_file);
-				error("Could not read file %s\n");
+				ERROR("Could not read wrapper file %s\n", wrapper_tmp_name);
+				free(wrapper_tmp_name);
 			}
 
 			printf("\t\t\t <> Writing Wrapper...\n");
@@ -812,7 +813,7 @@ void generateShellcode(const char *input_filename, const char *out_filename, u64
 			j = fwrite (wrapper_tmp_file, 1, wrapper_stats.st_size, inject_wrapper_file);
 
 			if (j != wrapper_stats.st_size)
-				error("\nERROR: Wrapper write was incomplete!\n");
+				ERROR("\nERROR: Wrapper write was incomplete!\n");
 
 			// Get esp offset
 			wrapper_esp_offset = getKernelEspOffset(wrapper_tmp_name);
@@ -950,15 +951,14 @@ void generateShellcode(const char *input_filename, const char *out_filename, u64
 
 				if(!inject_mcount_file)
 				{
-					printf("Could not open mcount file '%s' for writing\n", out_mcount_file);
-					error("");
+					ERROR("Could not open mcount file '%s' for writing\n", out_mcount_file);
 				}
 
 				// copy original file
 				j = fwrite (base_ptr, 1, elf_size, inject_mcount_file);
 
 				if(j != elf_size)
-					error("An error occurred while writing the binary.\n");
+					ERROR("An error occurred while writing the binary.\n");
 
 				fclose(inject_mcount_file);
 			}
@@ -968,12 +968,11 @@ void generateShellcode(const char *input_filename, const char *out_filename, u64
 
 			if(!inject_mcount_file)
 			{
-				printf("Could not open mcount file '%s' for updating\n", out_mcount_file);
-				error("");
+				ERROR("Could not open mcount file '%s' for updating\n", out_mcount_file);
 			}
 
 			if(fseek(inject_mcount_file, (symbols[i].target_addr - 1), SEEK_SET)) {
-				error("Could not seek to position in mcount file!\n");
+				ERROR("Could not seek to position in mcount file!\n");
 			}
 
 			if(symbols[i].type == R_X86_64_64)
@@ -1007,7 +1006,7 @@ void generateShellcode(const char *input_filename, const char *out_filename, u64
 		i = fread (orig_data, 1, elf_size, inject_mcount_file);
 
 		if(i != elf_size)
-			error("An error occurred while reading the mcount file.\n");
+			ERROR("An error occurred while reading the mcount file.\n");
 
 		fclose(inject_mcount_file);
 
@@ -1017,7 +1016,7 @@ void generateShellcode(const char *input_filename, const char *out_filename, u64
 		if(i == elf_size)
 			printf("OK!\n");
 		else
-			error("An error occurred while writing the binary.\n");
+			ERROR("An error occurred while writing the binary.\n");
 	}
 	printf("OK!\n");
 
@@ -1025,7 +1024,7 @@ void generateShellcode(const char *input_filename, const char *out_filename, u64
 	printf("\t -> Writing 'printk' Wrapper...\n");
 
 	if(0 != write_binary_blob(inject_file, &printf_shellcode)) {
-		error("An error occurred while writing the printk wrapper.\n");
+		ERROR("An error occurred while writing the printk wrapper.\n");
 	}
 
 	// Open and write wrapper file
@@ -1035,19 +1034,18 @@ void generateShellcode(const char *input_filename, const char *out_filename, u64
 
 		if(!inject_wrapper_file)
 		{
-			printf("\nERROR: Could not open wrapper file '%s' for copying\n", out_wrapper_file);
-			error("");
+			ERROR("\nERROR: Could not open wrapper file '%s' for copying\n", out_wrapper_file);
 		}
 
 		if((wrapper_tmp_file = (char *) malloc(wrapper_size * sizeof(char))) == NULL)
 		{
-			error("\nERROR: Could not reserve memory to store wrapper file.\n");
+			ERROR("\nERROR: Could not reserve memory to store wrapper file.\n");
 		}
 
 		i = fread (wrapper_tmp_file, 1, wrapper_size, inject_wrapper_file);
 
 		if(i != wrapper_size)
-			error("\nERROR: An error occurred while reading the wrapper file.\n");
+			ERROR("\nERROR: An error occurred while reading the wrapper file.\n");
 
 		fclose(inject_wrapper_file);
 
@@ -1058,7 +1056,7 @@ void generateShellcode(const char *input_filename, const char *out_filename, u64
 			unlink(out_wrapper_file);
 		}
 		else {
-			error("\nERROR: An error occurred while writing the wrapper section.\n");
+			ERROR("\nERROR: An error occurred while writing the wrapper section.\n");
 		}
 	}
 
@@ -1182,30 +1180,30 @@ int main(int argc, char *argv[])
 	printf("\t\t |_ Resulting file will be:    '%s'\n\n", output_file_name);
 
 	if ((fd = open(input_file_name, O_RDONLY)) < 0) {
-		error("Could not open input file '%s'\n", input_file_name);
+		ERROR("Could not open input file '%s'\n", input_file_name);
 	}
 
 	if ((fstat(fd, &elf_stats))) {
 		close(fd);
-		error("Could not fstat file\n");
+		ERROR("Could not fstat file\n");
 	}
 
 	if ((base_ptr = (char *) malloc(elf_stats.st_size)) == NULL) {
 		close(fd);
-		error("Could not reserve memory\n");
+		ERROR("Could not reserve memory\n");
 	}
 
 	if ((read(fd, base_ptr, elf_stats.st_size)) < elf_stats.st_size) {
 		close(fd);
 		free(base_ptr);
-		error("Could not read file\n");
+		ERROR("Could not read file\n");
 	}
 
 
 
 	/* Check libelf version first */
 	if (elf_version(EV_CURRENT) == EV_NONE) {
-		error("LIBELF initialization failed!\n");
+		ERROR("LIBELF initialization failed!\n");
 	}
 
 
@@ -1218,7 +1216,7 @@ int main(int argc, char *argv[])
 	printf("Checking for ELF Executable Object... ");
 
 	if (ek != ELF_K_ELF)
-		error("This does not seem to be an ELF binary!\n");
+		ERROR("This does not seem to be an ELF binary!\n");
 
 	printf("OK! Seems to be executable\n");
 
@@ -1228,7 +1226,7 @@ int main(int argc, char *argv[])
 	i = gelf_getclass(elf);
 
 	if (i ==  ELFCLASS32)
-		error("32-Bit Binary detected. Only 64-Bit is supported as of now.");
+		ERROR("32-Bit Binary detected. Only 64-Bit is supported as of now.");
 
 	printf("OK! 64-Bit binary found\n");
 
@@ -1276,8 +1274,9 @@ int main(int argc, char *argv[])
 
 	}
 
-	if(!symtab_scn)
-		error("Could not find symbol table!\n");
+	if (!symtab_scn) {
+		ERROR("Could not find symbol table section!\n");
+	}
 
 	// Parse Sections
 	parseRelaSections();
