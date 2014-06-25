@@ -1,13 +1,14 @@
 .PHONY: all
 all: inject-parser
 
-CFLAGS=-g -O0
+CFLAGS=-g -O1 -Wall -std=c99
+C=$(CC)
 
 inject-parser: parser.o shellcode_bin.o printf_shellcode_bin.o
-	$(CC) $(CFLAGS) -o $@ -lelf $^
+	$(C) $(CFLAGS) -o $@ -lelf $^
 
 parser.o: parser.c
-	$(CC) $(CFLAGS) -o $@ -c $<
+	$(C) $(CFLAGS) -o $@ -c $<
 
 shellcode.bin: shellcode.asm
 	nasm -f bin -o $@ -l shellcode.lst $<
