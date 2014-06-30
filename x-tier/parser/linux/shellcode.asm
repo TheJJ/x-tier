@@ -50,14 +50,14 @@ esppatcher:
 	push rbp          ; saving rbp
 	add rbp, rdx      ; pointing after the patch stack
 
-	mov r8, [rbp]      ; counter
+	mov r8, [rbp]     ; count = len(esp patches)
 	mov r9, rbp
 
 esppatchloop:
-	add r9, 8
+	add r9, 8            ; next esp patch position
 	test r8, r8          ; if count == 0
 	jz espendpatcher
-	dec r8
+	dec r8               ; count -= 1
 
 	mov rax, rbp         ; segmentaddr
 	sub rax, rdx         ; baseaddr = segmentaddr - distance
@@ -116,7 +116,7 @@ endsymbolpatcher:
 	ret
 
 saveregisters:
-	add rsp, 0x8     ; retun value
+	add rsp, 0x8     ; return value
 	add rsp, 0x10    ; 2*8 values auf stack
 	add rsp, 0x78    ; 15*8 register
 	push r8
@@ -135,11 +135,11 @@ saveregisters:
 	push rbx
 	push rax
 	sub rsp, 0x10    ; 2*8 values auf stack
-	sub rsp, 0x8     ; return valueyy
+	sub rsp, 0x8     ; return value
 	ret
 
 restoreregisters:
-	add rsp, 0x8     ; retun value
+	add rsp, 0x8     ; return value
 	add rsp, 0x8     ; 1*8 value auf stack
 	pop rax
 	pop rbx
@@ -193,7 +193,7 @@ exit:
 	nop
 
 start:
-	call sc
+	call sc            ; push shellcode end addr on stack and start running
 
 stack:
 
