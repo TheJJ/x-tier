@@ -910,6 +910,8 @@ void generate_shellcode(struct input_elf_file *f,
 			printf("\t\t\t -> parsing wrapper elf...\n");
 			parse_elf_file(&wrapper_file);
 
+			int64_t wrapper_text_start = get_section_address(&wrapper_file, ".text") + get_section_offset_by_name(&wrapper_file, ".text");
+
 			printf("\t\t\t <> Writing Wrapper...");
 
 			// copy original file
@@ -927,7 +929,7 @@ void generate_shellcode(struct input_elf_file *f,
 
 			// get offset of variable kernel_esp, where the shellcode will write the kernel esp
 			printf("\t\t\t -> getting patching position for 'kernel_esp' variable...\n");
-			wrapper_esp_offset = get_symbol_offset_by_name(&wrapper_file, "kernel_esp");
+			wrapper_esp_offset = get_symbol_offset_by_name(&wrapper_file, "kernel_esp") - wrapper_text_start;
 			printf("\t\t\t <> Found variable for kernel ESP offset @ 0x%llx...\n", wrapper_esp_offset);
 
 			//current writing position
@@ -939,7 +941,7 @@ void generate_shellcode(struct input_elf_file *f,
 			printf("\t\t\t <> Kernel Stack address will be written to 0x%llx...\n", esp_write_pos);
 			patches[wrapper_number].esp_address = esp_write_pos;
 
-			u64 subst_call_destination = n + get_symbol_offset_by_name(&wrapper_file, func_name);
+			u64 subst_call_destination = n + get_symbol_offset_by_name(&wrapper_file, func_name) - wrapper_text_start;
 
 			// Substitute the original call within the module with the call to the wrapper
 			printf("\t\t\t <> function '%s' @ 0x%llx will be set to call 0x%llx...\n",
