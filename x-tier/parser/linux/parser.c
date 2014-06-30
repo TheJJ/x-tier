@@ -908,7 +908,7 @@ void generate_shellcode(struct input_elf_file *f,
 			printf("\t\t\t -> parsing wrapper elf...\n");
 			parse_elf_file(&wrapper_file);
 
-			int64_t wrapper_text_start = get_section_address(&wrapper_file, ".text") + get_section_offset_by_name(&wrapper_file, ".text");
+			int64_t wrapper_text_start = get_section_address(&wrapper_file, ".text") - get_section_offset_by_name(&wrapper_file, ".text");
 
 			printf("\t\t\t <> Writing Wrapper...");
 
@@ -949,7 +949,7 @@ void generate_shellcode(struct input_elf_file *f,
 			patches[wrapper_number].address_target = f->symbols[i].target_addr + shellcode_data_length;
 			patches[wrapper_number].address_value  = subst_call_destination;
 
-			u64 func_new_target_addr = n - shellcode_data_length + wrapper_esp_offset + get_symbol_offset_by_name(&wrapper_file, "target_address") - wrapper_text_start;
+			u64 func_new_target_addr = n - shellcode_data_length + get_symbol_offset_by_name(&wrapper_file, "target_address") - wrapper_text_start;
 
 			printf("\t\t\t  \\_ set new target_address to 0x%llx...\n",
 			       func_new_target_addr);
@@ -1248,11 +1248,13 @@ int main(int argc, char *argv[]) {
 	// Find entry Point
 	printf("=> Looking for entry point...\n");
 
+	int64_t input_ko_text_section = get_section_address(&input_ko, ".text") - get_section_offset_by_name(&input_ko, ".text");
+
 	// Find entry point
 	if (init_function) {
 		input_ko.entry_point = get_symbol_offset_by_name(&input_ko, init_function);
 		if (input_ko.entry_point != -1) {
-			input_ko.entry_point = input_ko.entry_point - get_section_address(&input_ko, ".text") + get_section_offset_by_name(&input_ko, ".text");
+			input_ko.entry_point -= input_ko_text_section;
 			printf("-> Found entry function '%s' @ 0x%llx\n", init_function,  input_ko.entry_point);
 		}
 		else {
