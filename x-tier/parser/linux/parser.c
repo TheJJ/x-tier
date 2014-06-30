@@ -720,8 +720,6 @@ void generate_shellcode(struct input_elf_file *f,
 	char   *tmp                   = NULL;
 
 	u32   wrapper_size       = 0;
-	char *wrapper_tmp_name   = NULL;
-	char *wrapper_tmp_file   = NULL;
 	u32   wrapper_number     = 0;
 	u64   wrapper_esp_offset = 0;
 
@@ -899,7 +897,7 @@ void generate_shellcode(struct input_elf_file *f,
 
 			// Try to find wrapper
 			// Reserve space for wrapper file name
-			wrapper_tmp_name = (char *)malloc(sizeof(char) * (strlen(wrapper_path) + strlen(func_name) + strlen(wrapper_suffix) + 1));
+			char *wrapper_tmp_name = (char *)malloc(sizeof(char) * (strlen(wrapper_path) + strlen(func_name) + strlen(wrapper_suffix) + 1));
 
 			// Build name
 			strcpy(wrapper_tmp_name, wrapper_path);
@@ -968,7 +966,6 @@ void generate_shellcode(struct input_elf_file *f,
 
 			// free data
 			free(wrapper_tmp_name);
-			free(wrapper_tmp_file);
 		}
 	}
 
@@ -1092,6 +1089,9 @@ void generate_shellcode(struct input_elf_file *f,
 		printf("\t -> Writing remaining wrapper section... ");
 		inject_wrapper_file = fopen(out_wrapper_file, "rb");
 
+		//content of the temporary wrapper container file
+		char *wrapper_tmp_file = NULL;
+
 		if (!inject_wrapper_file) {
 			ERROR("\nERROR: Could not open wrapper file '%s' for copying\n", out_wrapper_file);
 		}
@@ -1109,6 +1109,8 @@ void generate_shellcode(struct input_elf_file *f,
 		fclose(inject_wrapper_file);
 
 		n = fwrite(wrapper_tmp_file, 1, wrapper_size, inject_file);
+
+		free(wrapper_tmp_file);
 
 		if (n == wrapper_size) {
 			printf("OK!\n");
