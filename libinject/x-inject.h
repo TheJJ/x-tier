@@ -19,15 +19,15 @@
 #define msg_print(level, level_string, fmt, ...) \
 	do {\
 		if (DEBUG_LEVEL >= level) {\
-			printf("[ x-inject - %s ] %d : %s(): " fmt, level_string, __LINE__, __func__, ##__VA_ARGS__);\
+			printf("[ libinject - %s ] %d : %s(): " fmt, level_string, __LINE__, __func__, ##__VA_ARGS__);\
 		}\
 	} while (0)\
 
 #define PRINT_DEBUG_FULL(fmt, ...) msg_print(ARR_DEBUG_FULL, "DEBUG FULL", fmt, ##__VA_ARGS__)
-#define PRINT_DEBUG(fmt, ...)      msg_print(ARR_DEBUG, "DEBUG", fmt, ##__VA_ARGS__)
-#define PRINT_INFO(fmt, ...)       msg_print(ARR_INFO, "INFO", fmt, ##__VA_ARGS__)
-#define PRINT_WARNING(fmt, ...)    msg_print(ARR_WARNING, "WARNING", fmt, ##__VA_ARGS__)
-#define PRINT_ERROR(fmt, ...)      msg_print(ARR_ERROR, "ERROR", fmt, ##__VA_ARGS__)
+#define PRINT_DEBUG(fmt, ...)      msg_print(ARR_DEBUG,      "DEBUG",      fmt, ##__VA_ARGS__)
+#define PRINT_INFO(fmt, ...)       msg_print(ARR_INFO,       "INFO",       fmt, ##__VA_ARGS__)
+#define PRINT_WARNING(fmt, ...)    msg_print(ARR_WARNING,    "WARNING",    fmt, ##__VA_ARGS__)
+#define PRINT_ERROR(fmt, ...)      msg_print(ARR_ERROR,      "ERROR",      fmt, ##__VA_ARGS__)
 
 
 /**
@@ -52,10 +52,10 @@ struct file_state {
 };
 
 struct received_data {
-	int   length;
-	int   allocated;
-	long  return_value;
-	void *data;
+	int      length;
+	int      allocated;
+	int64_t  return_value;
+	void    *data;
 };
 
 

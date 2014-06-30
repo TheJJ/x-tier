@@ -29,11 +29,6 @@ int  injection_output_fd = 0;
 int  injection_input_fd  = 0;
 bool created_output_pipe = false;
 
-// data transfer vars
-char          *data             = NULL;
-unsigned long  data_size        = 0;
-unsigned long  data_current_len = 0;
-
 // time measurement vars
 QTime timer;
 long  tmpTime, tmpInjectionTime, tmpReceiveTime;
@@ -54,6 +49,8 @@ bool create_injection_output_pipe(void) {
 			            injection_output_pipe_filename, ret, errno);
 			return false;
 		}
+		PRINT_DEBUG_FULL("Created output fifo...\n");
+
 	}
 
 	created_output_pipe = true;
@@ -228,7 +225,7 @@ bool receive_data(struct received_data *ret) {
 	// Notice that we currently _NOT_ remove the end marker and the return value from the
 	// received data. May be in the future.
 	PRINT_DEBUG_FULL("Received end marker!\n");
-	PRINT_DEBUG("Data tansfer of %ld bytes complete...\n", data_current_len);
+	PRINT_DEBUG("Data tansfer of %ld bytes complete...\n", ret->length);
 
 	// Time Measurement
 	totalReceiveTime += (timer.elapsed() - tmpReceiveTime);
@@ -261,7 +258,6 @@ bool inject_module(struct injection *injection, struct received_data *data) {
 	}
 
 	// Create output pipe if necessary
-	PRINT_DEBUG_FULL("Creating Output pipe...\n");
 	if (!create_injection_output_pipe()) {
 		PRINT_ERROR("Could not create output pipe!\n");
 		return false;
