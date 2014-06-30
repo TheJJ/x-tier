@@ -951,9 +951,14 @@ void generate_shellcode(struct input_elf_file *f,
 			patches[wrapper_number].address_target = f->symbols[i].target_addr + shellcode_data_length;
 			patches[wrapper_number].address_value  = subst_call_destination;
 
+			u64 func_new_target_addr = n - shellcode_data_length + wrapper_esp_offset + get_symbol_offset_by_name(&wrapper_file, "target_address") - wrapper_text_start;
+
+			printf("\t\t\t  \\_ set new target_address to 0x%llx...\n",
+			       func_new_target_addr);
+
 			// Fix Target address - We assume a fixed offset here - Ignore complete offset,
 			// by the resolve offset part
-			f->symbols[i].target_addr = f->size + printf_shellcode_size + wrapper_size + wrapper_esp_offset + 8;
+			f->symbols[i].target_addr = func_new_target_addr;
 
 			// Update wrapper size
 			wrapper_size += wrapper_file.size;
