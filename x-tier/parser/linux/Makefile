@@ -1,7 +1,7 @@
 .PHONY: all
 all: inject-parser
 
-CFLAGS=-g -O1 -Wall -std=c99
+CFLAGS=-g -O0 -Wall -Werror -std=c99
 C=$(CC)
 
 inject-parser: parser.o shellcode_bin.o printf_shellcode_bin.o

@@ -930,15 +930,17 @@ void generate_shellcode(struct input_elf_file *f,
 			wrapper_esp_offset = get_symbol_offset_by_name(&wrapper_file, "kernel_esp") - wrapper_text_start;
 			printf("\t\t\t <> Found variable for kernel ESP offset @ 0x%llx...\n", wrapper_esp_offset);
 
-			//current writing position
+			//current injection file writing position
 			n = (shellcode_data_length + f->size + printf_shellcode_size + wrapper_size);
 
+			//offset of the wrapper_esp variable within the injection file
 			u64 esp_write_pos = n + wrapper_esp_offset;
 
 			// Add address to esp patch symbols
 			printf("\t\t\t <> Kernel Stack address will be written to 0x%llx...\n", esp_write_pos);
 			patches[wrapper_number].esp_address = esp_write_pos;
 
+			//get offset of wrapper function within the injection file
 			u64 subst_call_destination = n + get_symbol_offset_by_name(&wrapper_file, func_name) - wrapper_text_start;
 
 			// Substitute the original call within the module with the call to the wrapper
