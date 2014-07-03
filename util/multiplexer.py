@@ -4,6 +4,7 @@ import datetime
 import threading
 import time
 import termios
+import signal
 import sys
 
 from twisted.internet.error import ConnectError, CannotListenError
@@ -305,6 +306,12 @@ if __name__ == "__main__":
     #factory = TelnetMultiplexFactory("127.0.0.1", 3333)
     #reactor.listenTCP(33333, factory)
     #reactor.run()
+
+    def signal_handler(signal, frame):
+        print('exiting...')
+        sys.exit(0)
+
+    signal.signal(signal.SIGINT, signal_handler)
 
     desthost, destport = ("127.0.0.1", 8999)
 
