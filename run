@@ -7,6 +7,12 @@ insmod linux/arch/x86/kvm/kvm.ko       || exit 1
 insmod linux/arch/x86/kvm/kvm-intel.ko || exit 1
 EOF
 
+if [[ $? -ne 0 ]]; then
+	echo "module loading failed! are you running the correct kernel?"
+	exit 1;
+fi
+
+
 #qemu guest system disk image
 diskimage=xshell-debian.qcow2
 
