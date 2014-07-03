@@ -16,3 +16,10 @@ perf.data*
 *.qcow2
 .gdb_history
 *.o.cmd
+*.ko
+Module.symvers
+modules.order
+*.mod.c
+.tmp_versions
+*.ko.cmd
+*.inject
