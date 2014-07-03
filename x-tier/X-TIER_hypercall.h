@@ -14,11 +14,11 @@
 #define XTIER_HYPERCALL_INTERRUPT 42
 
 // CONVENTION:
-// 	-> COMMAND: RAX
-//	-> FIRST PARAM: RBX
-//	-> SECOND PARAM: RCX
+// -> COMMAND: RAX
+// -> FIRST PARAM: RBX
+// -> SECOND PARAM: RCX
 //
-//	-> RETURN VALUE: RAX
+// -> RETURN VALUE: RAX
 
 /* The individual hypercall commands. The command register is RAX. */
 #define XTIER_HYPERCALL_RESERVE_MEMORY 12345

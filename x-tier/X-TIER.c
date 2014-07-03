@@ -386,7 +386,7 @@ struct injection *injection_from_fd(int fd)
 #ifdef DO_USERSPACE_BUILD
 	struct injection injection;
 	struct injection *result = NULL;
-	unsigned int size = 0;
+	int size = 0;
 	int ret = 0;
 
 	// Obtain the injection struct
@@ -583,17 +583,17 @@ static void consolidated_update_pointers(struct injection *injection)
 		return;
 	}
 
-	// Name pointer
+	// the module name is stored right behind the injection structure
 	if (injection->path_len) {
 		injection->module_path = ((char *)injection) + sizeof(struct injection);
 	}
 
-	// Code pointer
+	// the code is stored right after the module name
 	if (injection->code_len) {
 		injection->code = ((char *)injection->module_path) + injection->path_len;
 	}
 
-	// ARGS
+	// the argument data, should be right after the code
 	injection->args = get_injection_args(injection);
 
 	consolidated_update_arg_pointers(injection);
@@ -859,12 +859,14 @@ void add_struct_argument(struct injection *injection, void *data, unsigned int s
  */
 char is_immediate(struct injection_arg *arg)
 {
-	switch (arg->type)
-	{
+	if (arg == NULL) {
+		return -1;
+	}
+
+	switch (arg->type) {
 	case NUMERIC:
 		return 1;
 	case STRING:
-		/* Fall through */
 	case STRUCTURE:
 		return 0;
 	default:
@@ -872,10 +874,9 @@ char is_immediate(struct injection_arg *arg)
 	}
 }
 
-static const char * argument_type_to_string(enum arg_type type)
+const char *argument_type_to_string(enum arg_type type)
 {
-	switch (type)
-	{
+	switch (type) {
 	case NUMERIC:
 		return "NUMERIC";
 	case STRING:
@@ -887,34 +888,34 @@ static const char * argument_type_to_string(enum arg_type type)
 	}
 }
 
-static void print_argument(struct injection *injection, struct injection_arg *arg)
+void print_argument(struct injection *injection, struct injection_arg *arg)
 {
-	switch (arg->type)
-	{
+	char *arg_data = get_arg_data(injection, arg);
+
+	switch (arg->type) {
 	case NUMERIC:
-		switch (arg->size)
-		{
+		switch (arg->size) {
 		case sizeof(char):
-			PRINT("\t\t DATA: %c\n", *(get_arg_data(injection, arg)));
+			PRINT("\t\t DATA: %c\n", *arg_data);
 			return;
 		case sizeof(short):
-			PRINT("\t\t DATA: %hd\n", *((short *)get_arg_data(injection, arg)));
+			PRINT("\t\t DATA: %hd\n", *((short *)arg_data));
 			return;
 		case sizeof(int):
-			PRINT("\t\t DATA: %d\n", *((int *)get_arg_data(injection, arg)));
+			PRINT("\t\t DATA: %d\n", *((int *)arg_data));
 			return;
 		case sizeof(long):
-			PRINT("\t\t DATA: %ld\n", *((long *)get_arg_data(injection, arg)));
+			PRINT("\t\t DATA: %ld\n", *((long *)arg_data));
 			return;
 		default:
 			PRINT("\t\t DATA: UNKNOWN NUMERIC SIZE!\n");
 			return;
 		}
 	case STRING:
-		PRINT("\t\t DATA: %s\n", get_arg_data(injection, arg));
+		PRINT("\t\t DATA: %s\n", arg_data);
 		return;
 	case STRUCTURE:
-		PRINT("\t\t DATA: 0x%llx\n", *((long long *)get_arg_data(injection, arg)));
+		PRINT("\t\t DATA: 0x%llx\n", *((long long *)arg_data));
 		return;
 	default:
 		PRINT("\t\t DATA: UNDEFINED!\n");
@@ -922,25 +923,32 @@ static void print_argument(struct injection *injection, struct injection_arg *ar
 	}
 }
 
-static void print_arguments(struct injection *injection)
+void print_arguments(struct injection *injection)
 {
 	struct injection_arg *arg = NULL;
-	unsigned int argc = 0;
-	unsigned int i = 0;
+	int argc = 0;
+	int i = 0;
 
-	if (!get_injection_args(injection)) {
+	struct injection_args *args = get_injection_args(injection);
+
+	if (!args) {
 		PRINT("Injection structure has no arguments.\n");
 		return;
 	}
 
-	//arg = get_first_injection_arg(injection);
-	argc = get_injection_args(injection)->argc;
+	argc = args->argc;
 
-	PRINT("\t ARGUMENTS: %d ( @ %p)\n", argc, get_injection_args(injection));
+	PRINT("dumping arguments of injection...\n");
+	PRINT("\t |_ len(arguments) = %d (argv @ %p)\n", argc, args);
 
-	for (i = 0; i < argc; ++i)
-	{
+	for (i = 0; i < argc; ++i) {
 		arg = get_next_arg(injection, arg);
+
+		if (arg == NULL) {
+			PRINT_ERROR("Error: injection argument %d is nullptr!\n", i);
+			return;
+		}
+
 		PRINT("\t ARGUMENT %d @ %p\n", arg->number, arg);
 		PRINT("\t\t TYPE: %s\n", argument_type_to_string(arg->type));
 		PRINT("\t\t SIZE: %d\n", arg->size);
@@ -951,7 +959,7 @@ static void print_arguments(struct injection *injection)
 	}
 }
 
-static void print_arguments_reverse(struct injection *injection)
+void print_arguments_reverse(struct injection *injection)
 {
 	struct injection_arg *arg = NULL;
 	unsigned int argc = 0;
@@ -984,7 +992,7 @@ static void print_arguments_reverse(struct injection *injection)
 
 static void _print_injection(struct injection *injection, int order)
 {
-	PRINT("\nINJECTION STRUCTURE\n");
+	PRINT("INJECTION STRUCTURE\n");
 	PRINT("===================\n");
 	PRINT("\t MODULE: %s\n", injection->module_path);
 
@@ -997,12 +1005,12 @@ static void _print_injection(struct injection *injection, int order)
 
 	PRINT("\t TOTAL SIZE: %d\n", injection_size(injection));
 
-	PRINT("\t CODE @ %p\n", injection->code);
-	PRINT("\t CODE LEN: %d\n", injection->code_len);
-	PRINT("\t EVENT BASED: %d\n", injection->event_based);
-	PRINT("\t EVENT ADDRESS: %p\n", injection->event_address);
-	PRINT("\t TIME BASED: %d\n", injection->time_inject);
-	PRINT("\t AUTO INJECT: %d\n", injection->auto_inject);
+	PRINT("\t CODE         @ 0x%p\n", injection->code);
+	PRINT("\t CODE LEN:      %d\n", injection->code_len);
+	PRINT("\t EVENT BASED:   %d\n", injection->event_based);
+	PRINT("\t EVENT ADDRESS: 0x%p\n", injection->event_address);
+	PRINT("\t TIME BASED:    %d\n", injection->time_inject);
+	PRINT("\t AUTO INJECT:   %d\n", injection->auto_inject);
 	PRINT("\t EXIT AFTER INJECTION: %d\n", injection->exit_after_injection);
 
 	if (order > 0)

@@ -432,6 +432,11 @@ void print_injection(struct injection *injection);
  */
 void print_injection_reverse(struct injection *injection);
 
+void print_argument(struct injection *injection, struct injection_arg *arg);
+void print_arguments(struct injection *injection);
+void print_arguments_reverse(struct injection *injection);
+const char *argument_type_to_string(enum arg_type type);
+
 #ifdef _cplusplus
 }
 #endif
