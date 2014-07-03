@@ -120,7 +120,8 @@ static void insert_arg(struct injection *injection, struct injection_arg *arg)
 
 struct injection_args *get_injection_args(struct injection *injection)
 {
-	if (injection->type & (CONSOLIDATED | CONSOLIDATED_ARGS)) {
+	if (injection->type & (CONSOLIDATED)) {
+		// injection position + injection size + len(injection_path) + len(injection_code)
 		return (struct injection_args *)
 			(((char *)injection) + sizeof(struct injection) + injection->path_len + injection->code_len);
 	}
@@ -134,20 +135,23 @@ static struct injection_arg *get_first_injection_arg(struct injection *injection
 	struct injection_args *args = get_injection_args(injection);
 
 	if (!args) {
+		PRINT_ERROR("Injection structure has no injection_args data!\n");
 		return NULL;
 	}
 
 	if (args->argc == 0) {
+		PRINT_ERROR("queried first injection argument where argc == 0!\n");
 		return NULL;
 	}
 
-	if ((injection->type & (CONSOLIDATED | CONSOLIDATED_ARGS))) {
+	if ((injection->type & (CONSOLIDATED))) {
 		// We use pointer arithmetic here. args + 1 should point
 		// directly behind the injection_args structure!
 		return (struct injection_arg *)(args + 1);
 	}
-
-	return args->args;
+	else {
+		return args->args;
+	}
 }
 
 static struct injection_arg *get_last_injection_arg(struct injection *injection)
@@ -155,14 +159,16 @@ static struct injection_arg *get_last_injection_arg(struct injection *injection)
 	struct injection_args *args = get_injection_args(injection);
 
 	if (!args) {
+		PRINT_ERROR("Injection structure has no injection_args data!\n");
 		return NULL;
 	}
 
 	if (args->argc == 0) {
+		PRINT_ERROR("queried last injection argument where argc == 0!\n");
 		return NULL;
 	}
 
-	if ((injection->type & (CONSOLIDATED | CONSOLIDATED_ARGS))) {
+	if ((injection->type & (CONSOLIDATED))) {
 		return (struct injection_arg *)(((char *)args) + (injection->args_size - injection->size_last_arg));
 	}
 
@@ -175,14 +181,15 @@ static struct injection_arg *get_last_injection_arg(struct injection *injection)
 }
 
 struct injection_arg *get_next_arg(struct injection *injection,
-                                    struct injection_arg *arg)
+                                   struct injection_arg *arg)
 {
-	// If arg is NULL we return the first arg
-	if (!arg)
+	// If no previous arg was queried, return the first arg
+	if (arg == NULL) {
 		return get_first_injection_arg(injection);
+	}
 
-	if ((injection->type & (CONSOLIDATED | CONSOLIDATED_ARGS)))
-	{
+	if ((injection->type & (CONSOLIDATED | CONSOLIDATED_ARGS))) {
+		//next argument is located after the size of this argument + it's data
 		return (struct injection_arg *)(((char *)arg) + sizeof(struct injection_arg) + arg->size);
 	}
 
@@ -190,7 +197,7 @@ struct injection_arg *get_next_arg(struct injection *injection,
 }
 
 struct injection_arg *get_prev_arg(struct injection *injection,
-                                    struct injection_arg *arg)
+                                   struct injection_arg *arg)
 {
 	// If arg is NULL we return the first arg
 	if (!arg) {
@@ -206,12 +213,12 @@ struct injection_arg *get_prev_arg(struct injection *injection,
 
 char *get_arg_data(struct injection *injection, struct injection_arg *arg)
 {
-	if ((injection->type & (CONSOLIDATED | CONSOLIDATED_ARGS)))
-	{
+	if ((injection->type & (CONSOLIDATED | CONSOLIDATED_ARGS))) {
 		return (char *)(((char *)arg) + sizeof(struct injection_arg));
 	}
-
-	return arg->data;
+	else {
+		return arg->data;
+	}
 }
 
 /*
@@ -681,7 +688,7 @@ struct injection *consolidate(struct injection *injection)
 	struct injection *result = NULL;
 
 	// Is this structure already consolidated?
-	if (injection->type & (CONSOLIDATED | CONSOLIDATED_ARGS)) {
+	if (injection->type & (CONSOLIDATED)) {
 		PRINT_WARNING("Injection structure already consolidated! Aborting!\n");
 		return injection;
 	}
@@ -691,6 +698,7 @@ struct injection *consolidate(struct injection *injection)
 	}
 
 	// Allocate memory for the whole injection blob
+	// this includes metadata, module name, code and arguments
 	consolidated_data = (char *)MALLOC(injection_size(injection));
 
 	if (!consolidated_data) {
