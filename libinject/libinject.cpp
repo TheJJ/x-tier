@@ -379,9 +379,11 @@ void print_injection_stats(void) {
 	printf(" Injection: %lds %ldms\n", s, ms);
 	printf("\tInjections: %ld\n", injectionCount);
 
-	s  = ((totalInjectionTime - totalReceiveTime) / injectionCount) / 1000;
-	ms = ((totalInjectionTime - totalReceiveTime) / injectionCount) - (s * 1000);
-	printf("\tAverage: %lds %ldms\n", s, ms);
+	if (injectionCount > 0) {
+		s  = ((totalInjectionTime - totalReceiveTime) / injectionCount) / 1000;
+		ms = ((totalInjectionTime - totalReceiveTime) / injectionCount) - (s * 1000);
+		printf("\tAverage: %lds %ldms\n", s, ms);
+	}
 }
 
 
