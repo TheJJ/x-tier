@@ -86,8 +86,8 @@ enum arg_type
 enum injection_type
 {
     VARIABLE          = 0x0,
-    CONSOLIDATED      = 0x1,  //last bit: consolidated
-    CONSOLIDATED_ARGS = 0x2,
+    CONSOLIDATED_ARGS = 0x1,  //last bit: the arguments are one blob (stored at injection->argv).
+    CONSOLIDATED      = 0x2,  //fist bit: the whole injection is one blob then.
 };
 
 /**
@@ -108,14 +108,6 @@ struct injection_arg
                                  ///< and specifies where the data was written to the stack
 };
 
-/**
- * Structure that wraps multiple injection arguments.
- */
-struct injection_args
-{
-    unsigned int argc;           ///< The number of arguments in this structure
-    struct injection_arg *args;  ///< Pointer to the first argument
-};
 
 /**
  * The main structure for code injection. Notice that this structure is also used
@@ -141,7 +133,8 @@ struct injection
     unsigned int size_last_arg;  ///< The size of the last argument including its data
                                  ///< structure in bytes. This is required for backwards
                                  ///< iteration in consolidated state.
-    struct injection_args *args; ///< The arguments to the module
+    unsigned int argc;           ///< The number of arguments in this injection
+    struct injection_arg *argv;  ///< Pointer to the first argument
 };
 
 
@@ -436,6 +429,7 @@ void print_argument(struct injection *injection, struct injection_arg *arg);
 void print_arguments(struct injection *injection);
 void print_arguments_reverse(struct injection *injection);
 const char *argument_type_to_string(enum arg_type type);
+struct injection_arg *get_consolidated_args(struct injection *injection, char *consolidated_data_dest_ptr);
 
 #ifdef _cplusplus
 }
