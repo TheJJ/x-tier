@@ -285,7 +285,7 @@ struct injection *consolidate_args(struct injection *injection);
  * @param A pointer to the injection structure whose code should be
  *        loaded.
  */
-void injection_load_code(struct injection *injection);
+int injection_load_code(struct injection *injection);
 
 /**
  * Get the injection arguments of an injection structure. Notice that this
@@ -425,11 +425,13 @@ void print_injection(struct injection *injection);
  */
 void print_injection_reverse(struct injection *injection);
 
+void print_argument_data(struct injection *injection, struct injection_arg *arg);
 void print_argument(struct injection *injection, struct injection_arg *arg);
 void print_arguments(struct injection *injection);
 void print_arguments_reverse(struct injection *injection);
 const char *argument_type_to_string(enum arg_type type);
 struct injection_arg *get_consolidated_args(struct injection *injection, char *consolidated_data_dest_ptr);
+void consolidated_update_arg_pointers(struct injection *injection);
 
 #ifdef _cplusplus
 }

@@ -145,7 +145,12 @@ static struct injection_arg *get_last_injection_arg(struct injection *injection)
 	}
 	else {
 		if (injection->argv) {
-			return injection->argv->prev;
+			if (injection->type & (CONSOLIDATED_ARGS)) {
+				return (struct injection_arg *)((char *)injection->argv + injection->args_size - injection->size_last_arg);
+			}
+			else {
+				return injection->argv->prev;
+			}
 		}
 		else {
 			PRINT_ERROR("injection argv is NULL even though argc != 0!\n");
@@ -157,38 +162,60 @@ static struct injection_arg *get_last_injection_arg(struct injection *injection)
 struct injection_arg *get_next_arg(struct injection *injection,
                                    struct injection_arg *arg)
 {
+	struct injection_arg *ret = NULL;
+
+	PRINT_DEBUG("called get_next_arg with injection: 0x%p, arg: 0x%p\n", injection, arg);
+
 	// If no previous arg was queried, return the first arg
 	if (arg == NULL) {
-		return get_first_injection_arg(injection);
+		PRINT_DEBUG("arg NULL\n");
+		ret = get_first_injection_arg(injection);
 	}
-
-	if ((injection->type & (CONSOLIDATED | CONSOLIDATED_ARGS))) {
+	else if (injection->argc == 1) {
+		PRINT_DEBUG("argc 1\n");
+		ret = arg;
+	}
+	else if ((injection->type & (CONSOLIDATED | CONSOLIDATED_ARGS))) {
+		PRINT_DEBUG("arg consolidated \n");
 		//next argument is located after the size of this argument + its data
-		return (struct injection_arg *)(((char *)arg) + sizeof(struct injection_arg) + arg->size);
+		ret = (struct injection_arg *)(((char *)arg) + sizeof(struct injection_arg) + arg->size);
 	}
 	else {
-		return arg->next;
+		PRINT_DEBUG("arg next\n");
+		ret = arg->next;
 	}
+
+	PRINT_DEBUG("next_arg returning 0x%p\n", ret);
+	return ret;
 }
 
 struct injection_arg *get_prev_arg(struct injection *injection,
                                    struct injection_arg *arg)
 {
+	struct injection_arg *ret = NULL;
+
+	PRINT_DEBUG("called get_prev_arg with injection: 0x%p, arg: 0x%p\n", injection, arg);
+
 	// If arg is NULL we return the last arg
-	if (!arg) {
-		return get_last_injection_arg(injection);
+	if (arg == NULL) {
+		PRINT_DEBUG("arg NULL\n");
+		ret = get_last_injection_arg(injection);
 	}
-
-	if (injection->argc == 1) {
-		return arg;
+	else if (injection->argc == 1) {
+		PRINT_DEBUG("argc 1\n");
+		ret = arg;
 	}
-
-	if ((injection->type & (CONSOLIDATED | CONSOLIDATED_ARGS))) {
-		return (struct injection_arg *)(((char *)arg) - sizeof(struct injection_arg) - arg->size_prev);
+	else if ((injection->type & (CONSOLIDATED | CONSOLIDATED_ARGS))) {
+		PRINT_DEBUG("arg consolidated\n");
+		ret = (struct injection_arg *)(((char *)arg) - (sizeof(struct injection_arg) + arg->size_prev));
 	}
 	else {
-		return arg->prev;
+		PRINT_DEBUG("arg prev\n");
+		ret = arg->prev;
 	}
+
+	PRINT_DEBUG("prev_arg returning 0x%p\n", ret);
+	return ret;
 }
 
 char *get_arg_data(struct injection *injection, struct injection_arg *arg)
@@ -513,15 +540,38 @@ unsigned int injection_size(struct injection *injection)
 }
 
 // Fixes the argument pointers in a consolidated injection structure
-static void consolidated_update_arg_pointers(struct injection *injection)
+void consolidated_update_arg_pointers(struct injection *injection)
 {
+	/*
+	  consolidated_args:
+	  ######### <- injection blob
+	          | <- argv ptr
+	          v
+	          #%%#%%%#%%
+	          ^ \_ injection_arg data
+	          injection_arg
+
+	  consolidated:
+
+	  ##########%%#%%%#%%
+
+	 */
 	struct injection_arg *cur, *prev, *last;
 
 	if (injection->argc > 0) {
-		last            = get_last_injection_arg(injection);
-		cur             = get_first_injection_arg(injection);
-		prev            = last;
+		//when CONSOLIDATED, cur is the offset within the injection blob
+		//else cur is the current (new) arg start pointer
+		cur = get_first_injection_arg(injection);
+
+		//set the new arg start ptr to that point
 		injection->argv = cur;
+
+		//get new last injection arg ptr
+		last = get_last_injection_arg(injection);
+
+		//current arg is the first.
+		//the previous to the first arg is the last
+		prev = last;
 
 		if (!cur) {
 			//no arguments stored.
@@ -529,18 +579,23 @@ static void consolidated_update_arg_pointers(struct injection *injection)
 		}
 
 		do {
-			// Set previous arg ptr
+			// Set previous arg ptr for the current arg
 			cur->prev = prev;
+
+			// The next of the previous arg is the current arg
 			prev->next = cur;
 
-			// store arg data ptr
+			// The arg data may lie behind the arg metadata structure
 			cur->data = get_arg_data(injection, cur);
 
-			// move onto the next arg
+			// Move onto the next arg
 			prev = cur;
 			cur = get_next_arg(injection, cur);
 		}
 		while (prev != last);
+	}
+	else {
+		injection->argv = NULL;
 	}
 }
 
@@ -756,19 +811,13 @@ static void add_argument(struct injection *injection, unsigned int number,
 	// Notice that this will be incorrect for a single element
 	arg->size_prev = arg->prev->size;
 
-	injection->args_size += sizeof(struct injection_arg) + size;
-
-	if (injection->argc > 1) {
-		injection->size_last_arg += sizeof(struct injection_arg) + injection->argv->prev->size;
-	}
-	else {
-		injection->size_last_arg += sizeof(struct injection_arg) + size;
-	}
+	injection->args_size     += sizeof(struct injection_arg) + size;
+	injection->size_last_arg += sizeof(struct injection_arg) + injection->argv->prev->size;
 }
 
 static unsigned int next_free_arg_number(struct injection *injection)
 {
-	return injection->argc + 1;
+	return injection->argc;
 }
 
 /*
@@ -859,7 +908,7 @@ const char *argument_type_to_string(enum arg_type type)
 	}
 }
 
-void print_argument(struct injection *injection, struct injection_arg *arg)
+void print_argument_data(struct injection *injection, struct injection_arg *arg)
 {
 	char *arg_data = get_arg_data(injection, arg);
 
@@ -894,13 +943,24 @@ void print_argument(struct injection *injection, struct injection_arg *arg)
 	}
 }
 
+void print_argument(struct injection *injection, struct injection_arg *arg)
+{
+	PRINT("\t ARGUMENT %d @ %p\n", arg->number, arg);
+	PRINT("\t\t TYPE: %s\n", argument_type_to_string(arg->type));
+	PRINT("\t\t SIZE: %d\n", arg->size);
+	PRINT("\t\t NEXT: %p\n", arg->next);
+	PRINT("\t\t PREV: %p\n", arg->prev);
+	PRINT("\t\t DATA @%p\n", arg->data);
+	print_argument_data(injection, arg);
+}
+
 void print_arguments(struct injection *injection)
 {
 	struct injection_arg *arg = NULL;
 	unsigned int i = 0;
 
-	PRINT("dumping arguments of injection...\n");
-	PRINT("\t |_ len(arguments) = %d (argv @ %p)\n", injection->argc, get_first_injection_arg(injection));
+	PRINT("arguments:\n");
+	PRINT("\tlen(arguments): %d (argv @ %p)\n", injection->argc, get_first_injection_arg(injection));
 
 	for (i = 0; i < injection->argc; ++i) {
 		arg = get_next_arg(injection, arg);
@@ -910,12 +970,6 @@ void print_arguments(struct injection *injection)
 			return;
 		}
 
-		PRINT("\t ARGUMENT %d @ %p\n", arg->number, arg);
-		PRINT("\t\t TYPE: %s\n", argument_type_to_string(arg->type));
-		PRINT("\t\t SIZE: %d\n", arg->size);
-		PRINT("\t\t NEXT: %p\n", arg->next);
-		PRINT("\t\t PREV: %p\n", arg->prev);
-		PRINT("\t\t DATA @ %p\n", arg->data);
 		print_argument(injection, arg);
 	}
 }
@@ -925,17 +979,17 @@ void print_arguments_reverse(struct injection *injection)
 	struct injection_arg *arg = NULL;
 	unsigned int i = 0;
 
-	PRINT("\t ARGUMENTS: %d ( @ %p)\n", injection->argc, get_first_injection_arg(injection));
+	PRINT("arguments: reverse order\n");
+	PRINT("\tlen(arguments): %d (argv @ %p)\n", injection->argc, get_first_injection_arg(injection));
 
 	for (i = 0; i < injection->argc; ++i)
 	{
 		arg = get_prev_arg(injection, arg);
-		PRINT("\t ARGUMENT %d @ %p\n", arg->number, arg);
-		PRINT("\t\t TYPE: %s\n", argument_type_to_string(arg->type));
-		PRINT("\t\t SIZE: %d\n", arg->size);
-		PRINT("\t\t NEXT: %p\n", arg->next);
-		PRINT("\t\t PREV: %p\n", arg->prev);
-		PRINT("\t\t DATA @ %p\n", arg->data);
+		if (arg == NULL) {
+			PRINT_ERROR("Error: injection argument %d is nullptr!\n", i);
+			return;
+		}
+
 		print_argument(injection, arg);
 	}
 }
@@ -951,17 +1005,21 @@ static void _print_injection(struct injection *injection, int order)
 		PRINT("\t TYPE: VARIABLE\n");
 	else if (injection->type == CONSOLIDATED_ARGS)
 		PRINT("\t TYPE: CONSOLIDATED ARGS\n");
-	else
+	else if (injection->type == CONSOLIDATED)
 		PRINT("\t TYPE: CONSOLIDATED\n");
+	else
+		PRINT("\t TYPE: UNDEFINED\n");
 
 	PRINT("\t TOTAL SIZE: %d\n", injection_size(injection));
 
-	PRINT("\t CODE         @ 0x%p\n", injection->code);
+	PRINT("\t CODE:        @ 0x%p\n", injection->code);
 	PRINT("\t CODE LEN:      %d\n", injection->code_len);
-	PRINT("\t EVENT BASED:   %d\n", injection->event_based);
-	PRINT("\t EVENT ADDRESS: 0x%p\n", injection->event_address);
-	PRINT("\t TIME BASED:    %d\n", injection->time_inject);
-	PRINT("\t AUTO INJECT:   %d\n", injection->auto_inject);
+	PRINT("\t ARGUMENTS:   @ 0x%p\n", injection->argv);
+	PRINT("\t ARGS SIZE:     %d\n", injection->args_size);
+	//PRINT("\t EVENT BASED:   %d\n", injection->event_based);
+	//PRINT("\t EVENT ADDRESS: 0x%p\n", injection->event_address);
+	//PRINT("\t TIME BASED:    %d\n", injection->time_inject);
+	//PRINT("\t AUTO INJECT:   %d\n", injection->auto_inject);
 	PRINT("\t EXIT AFTER INJECTION: %d\n", injection->exit_after_injection);
 
 	if (order > 0)
