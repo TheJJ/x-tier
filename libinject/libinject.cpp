@@ -400,6 +400,7 @@ void terminate_connection(void) {
 	if (injection_input_fd) {
 		close(injection_input_fd);
 	}
+	PRINT_INFO("terminated connected to qemu monitor\n");
 }
 
 bool init_connection(int16_t port) {
