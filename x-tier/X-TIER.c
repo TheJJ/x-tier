@@ -253,7 +253,7 @@ static void injection_set_module_name(struct injection *injection, const char *m
 }
 
 
-void injection_load_code(struct injection *injection)
+int injection_load_code(struct injection *injection)
 {
 #ifdef DO_USERSPACE_BUILD
 
@@ -272,7 +272,7 @@ void injection_load_code(struct injection *injection)
 	if (!injection->module_path)
 	{
 		PRINT_ERROR("Injection structure has no module set! Cannot load code!\n");
-		return;
+		return 1;
 	}
 
 	// Open File Descriptor
@@ -281,7 +281,7 @@ void injection_load_code(struct injection *injection)
 	if(fd < 0)
 	{
 		PRINT_ERROR("Could not open file descriptor to file %s!\n", injection->module_path);
-		return;
+		return 1;
 	}
 
 	// Open file
@@ -290,14 +290,14 @@ void injection_load_code(struct injection *injection)
 	if (!file)
 	{
 		PRINT_ERROR("Could not open file %s!\n", injection->module_path);
-		return;
+		return 1;
 	}
 
 	// Get length of the file
 	if (fstat(fd, &stbuf) == -1)
 	{
 		PRINT_ERROR("Could not obtain the size of the file!\n");
-		return;
+		return 1;
 	}
 
 	injection->code_len = stbuf.st_size;
@@ -310,21 +310,22 @@ void injection_load_code(struct injection *injection)
 		PRINT_ERROR("Could not reserve memory!\n");
 
 		fclose(file);
-		return;
+		return 1;
 	}
 
 	// Read file
 	if(fread(injection->code, 1, injection->code_len, file) != injection->code_len)
 	{
 		PRINT_ERROR("An error occurred while reading the injection file '%s'\n", injection->module_path);
-		return;
+		return 1;
 	}
 
 	fclose(file);
+	return 0;
 
-#else
-
+#else //kernelspace
 	PRINT_ERROR("Loading code is not supported in kernel mode!\n");
+	return 1;
 #endif
 }
 
