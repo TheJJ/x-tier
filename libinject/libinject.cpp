@@ -114,14 +114,12 @@ bool send_monitor_command(const char *command) {
 
 
 void realloc_recv_data(struct received_data *data) {
-	void *tmp;
-
 	const int factor = 2;
 
 	if (data->length >= data->allocated) {
-		tmp = realloc(data->data, data->allocated * factor);
+		data->data = realloc(data->data, data->allocated * factor);
 
-		if (!tmp) {
+		if (!data->data) {
 			PRINT_ERROR("Could not increase data reception memory!\n");
 			return;
 		}
@@ -136,7 +134,7 @@ int receive_data_chunk(struct received_data *data) {
 
 	// Is the data buffer set up?
 	if (!data->data) {
-		data->allocated = 4096; //assume 4096
+		data->allocated = 4096;
 		data->length    = 0;    //nothing stored yet.
 
 		data->data      = malloc(data->allocated);
@@ -155,7 +153,7 @@ int receive_data_chunk(struct received_data *data) {
 	n = read(injection_output_fd, ((uint8_t *)data->data + data->length), (data->allocated - data->length));
 
 	if (n < 0) {
-		PRINT_ERROR("An error (%d) occurred while receiving the data!\n", n);
+		PRINT_ERROR("An error (%d) occurred while receiving the data! errno: %d = %s\n", n, errno, strerror(errno));
 	}
 	else {
 		data->length += n;
