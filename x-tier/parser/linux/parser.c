@@ -715,8 +715,8 @@ void generate_shellcode(struct input_elf_file *f,
 	u64     esp_patch_count       = 0;
 	size_t  shellcode_data_length = 0;
 	FILE   *inject_file           = NULL;
-	FILE   *inject_wrapper_file   = NULL;
-	char   *out_wrapper_file      = NULL;
+	FILE   *tmp_wrapper_file      = NULL;
+	char   *tmp_wrapper_file_name = NULL;
 	char   *tmp                   = NULL;
 
 	u32   wrapper_size       = 0;
@@ -783,10 +783,10 @@ void generate_shellcode(struct input_elf_file *f,
 
 	// Temporary output file for wrappers
 	const char *wrapper_tmpfile_suffix = ".inject.wrapper";
-	out_wrapper_file = malloc(sizeof(char) * (tmp - input_filename + 1 + strlen(wrapper_tmpfile_suffix) + 1));
-	strncpy(out_wrapper_file, input_filename, tmp - input_filename);
-	strncpy(out_wrapper_file + (tmp - input_filename), wrapper_tmpfile_suffix, strlen(wrapper_tmpfile_suffix));
-	out_wrapper_file[tmp - input_filename + 1 + strlen(wrapper_tmpfile_suffix)] = '\0';
+	tmp_wrapper_file_name = malloc(sizeof(char) * (tmp - input_filename + 1 + strlen(wrapper_tmpfile_suffix) + 1));
+	strncpy(tmp_wrapper_file_name, input_filename, tmp - input_filename);
+	strncpy(tmp_wrapper_file_name + (tmp - input_filename), wrapper_tmpfile_suffix, strlen(wrapper_tmpfile_suffix));
+	tmp_wrapper_file_name[tmp - input_filename + 1 + strlen(wrapper_tmpfile_suffix)] = '\0';
 
 	// Calulcate Shellcode offsets
 	printf("\t -> Calculating shellcode data length...\n");
@@ -866,7 +866,7 @@ void generate_shellcode(struct input_elf_file *f,
 	// ESP Patch syms
 	// Must be considered first to be able to write the correct patch symbols
 	if (esp_patch_count > 0) {
-		printf("\t -> Generating wrapper file '%s' for %llu external function(s)...\n", out_wrapper_file, esp_patch_count);
+		printf("\t -> Generating wrapper file '%s' for %llu external function(s)...\n", tmp_wrapper_file_name, esp_patch_count);
 
 		// Reserve space
 		patches = (struct wrapper_patch *)malloc(sizeof(struct wrapper_patch) * esp_patch_count);
@@ -880,10 +880,10 @@ void generate_shellcode(struct input_elf_file *f,
 	}
 
 	// Open wrapper file
-	inject_wrapper_file = fopen(out_wrapper_file, "wb");
+	tmp_wrapper_file = fopen(tmp_wrapper_file_name, "wb");
 
-	if (!inject_wrapper_file) {
-		ERROR("Could not open wrapper file '%s'!\n", out_wrapper_file);
+	if (!tmp_wrapper_file) {
+		ERROR("Could not open wrapper file '%s'!\n", tmp_wrapper_file_name);
 	}
 
 	for (int i = 0; i < f->symbol_count; i++) {
@@ -910,10 +910,10 @@ void generate_shellcode(struct input_elf_file *f,
 
 			int64_t wrapper_text_start = get_section_address(&wrapper_file, ".text") - get_section_offset_by_name(&wrapper_file, ".text");
 
-			printf("\t\t\t <> Writing Wrapper...");
+			printf("\t\t\t <> Writing wrapper to tmpfile @0x%lx...", ftell(tmp_wrapper_file));
 
 			// copy original file
-			n = fwrite(wrapper_file.data, 1, wrapper_file.size, inject_wrapper_file);
+			n = fwrite(wrapper_file.data, 1, wrapper_file.size, tmp_wrapper_file);
 
 			if (n != wrapper_file.size) {
 				ERROR("\nERROR: Wrapper write was incomplete!\n");
@@ -971,7 +971,7 @@ void generate_shellcode(struct input_elf_file *f,
 		}
 	}
 
-	fclose(inject_wrapper_file);
+	fclose(tmp_wrapper_file);
 
 	// Patch Symbols
 	printf("\t -> Writing patch symbols (%llu)... \n", patch_count + esp_patch_count);
@@ -1055,10 +1055,8 @@ void generate_shellcode(struct input_elf_file *f,
 	printf("\t -> Writing Resolve Symbols (%llu)... \n", resolve_num);
 	write_int_reversed(inject_file, resolve_num); // Count
 
-	for(int i = 0; i < f->symbol_count; i++) {
-		if(f->symbols[i].resolve
-		   && 0 != strcmp(f->symbols[i].str, "printk"))
-		{
+	for (int i = 0; i < f->symbol_count; i++) {
+		if (f->symbols[i].resolve && 0 != strcmp(f->symbols[i].str, "printk")) {
 			printf("\t\t # RESOLVE %s @ 0x%llx must be resolved...\n", f->symbols[i].str,
 			       f->symbols[i].target_addr + shellcode_data_length);
 
@@ -1069,10 +1067,9 @@ void generate_shellcode(struct input_elf_file *f,
 	}
 
 	// Write Binary
-	printf("\t -> Writing Binary... ");
-
-	printf(" copying original kernel module contents... ");
-	n = fwrite (f->data, 1, f->size, inject_file);
+	printf("\t => Writing injection code section:\n");
+	printf("\t -> copying original kernel module contents @0x%lx... ", ftell(inject_file));
+	n = fwrite(f->data, 1, f->size, inject_file);
 
 	if (n != f->size) {
 		ERROR("error!\n");
@@ -1080,7 +1077,7 @@ void generate_shellcode(struct input_elf_file *f,
 		printf("OK!\n");
 	}
 
-	printf("\t -> Writing 'printk' Wrapper...\n");
+	printf("\t -> Writing 'printk' Wrapper @0x%lx... \n", ftell(inject_file));
 
 	if (0 != write_binary_blob(inject_file, &printf_shellcode)) {
 		ERROR("An error occurred while writing the printk wrapper.\n");
@@ -1088,27 +1085,27 @@ void generate_shellcode(struct input_elf_file *f,
 
 	// Open and write wrapper file
 	if (esp_patch_count > 0) {
-		printf("\t -> Writing remaining wrapper section... ");
-		inject_wrapper_file = fopen(out_wrapper_file, "rb");
+		printf("\t -> Writing remaining wrapper section @0x%lx... ", ftell(inject_file));
+		tmp_wrapper_file = fopen(tmp_wrapper_file_name, "rb");
 
 		//content of the temporary wrapper container file
 		char *wrapper_tmp_file = NULL;
 
-		if (!inject_wrapper_file) {
-			ERROR("\nERROR: Could not open wrapper file '%s' for copying\n", out_wrapper_file);
+		if (!tmp_wrapper_file) {
+			ERROR("\nERROR: Could not open wrapper file '%s' for copying\n", tmp_wrapper_file_name);
 		}
 
 		if ((wrapper_tmp_file = (char *) malloc(wrapper_size * sizeof(char))) == NULL) {
 			ERROR("\nERROR: Could not reserve memory to store wrapper file.\n");
 		}
 
-		n = fread (wrapper_tmp_file, 1, wrapper_size, inject_wrapper_file);
+		n = fread (wrapper_tmp_file, 1, wrapper_size, tmp_wrapper_file);
 
 		if (n != wrapper_size) {
 			ERROR("\nERROR: An error occurred while reading the wrapper file.\n");
 		}
 
-		fclose(inject_wrapper_file);
+		fclose(tmp_wrapper_file);
 
 		n = fwrite(wrapper_tmp_file, 1, wrapper_size, inject_file);
 
@@ -1116,14 +1113,14 @@ void generate_shellcode(struct input_elf_file *f,
 
 		if (n == wrapper_size) {
 			printf("OK!\n");
-			unlink(out_wrapper_file);
+			unlink(tmp_wrapper_file_name);
 		}
 		else {
 			ERROR("\nERROR: An error occurred while writing the wrapper section.\n");
 		}
 	}
 
-	free(out_wrapper_file);
+	free(tmp_wrapper_file_name);
 
 	fclose(inject_file);
 }
