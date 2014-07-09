@@ -204,6 +204,9 @@ struct injection_arg *get_prev_arg(struct injection *injection,
 	return ret;
 }
 
+/**
+   return pointer to the argument data.
+ */
 char *get_arg_data(struct injection *injection, struct injection_arg *arg)
 {
 	//when serialized, the arg data is stored right behind the injection_arg structure.
@@ -751,7 +754,7 @@ struct injection *consolidate(struct injection *injection)
  * +=========================================================
  */
 static void add_argument(struct injection *injection, unsigned int number,
-                         enum arg_type type, unsigned int size, char *data)
+                         enum arg_type type, unsigned int size, const char *data)
 {
 	struct injection_arg *arg;
 
@@ -799,7 +802,7 @@ static void add_argument(struct injection *injection, unsigned int number,
 	arg->size_prev = arg->prev->size;
 
 	injection->args_size     += sizeof(struct injection_arg) + size;
-	injection->size_last_arg += sizeof(struct injection_arg) + injection->argv->prev->size;
+	injection->size_last_arg  = sizeof(struct injection_arg) + injection->argv->prev->size;
 }
 
 static unsigned int next_free_arg_number(struct injection *injection)
@@ -841,7 +844,7 @@ void add_long_argument(struct injection *injection, long data)
  * |                    STRING HELPERS
  * +=========================================================
  */
-void add_string_argument(struct injection *injection, char *data)
+void add_string_argument(struct injection *injection, const char *data)
 {
 	unsigned int len = strlen(data) + 1;
 

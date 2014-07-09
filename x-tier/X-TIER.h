@@ -384,7 +384,7 @@ void add_long_argument(struct injection *injection, long data);
  *                  the argument.
  * @param data A pointer that points to the string of the argument.
  */
-void add_string_argument(struct injection *injection, char *data);
+void add_string_argument(struct injection *injection, const char *data);
 
 /**
  * Add a struct or array argument to an injection structure. The new argument
