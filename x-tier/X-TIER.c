@@ -330,23 +330,23 @@ struct injection *new_injection(const char *module_name)
 	// Name
 	injection_set_module_name(result, module_name);
 
+	// Set Type
+	result->type = VARIABLE;
+
 	// Generals
 	result->code                 = NULL;
 	result->code_len             = 0;
 	result->event_based          = 0;
 	result->event_address        = NULL;
-	result->exit_after_injection = 1;
 	result->auto_inject          = 0;
 	result->time_inject          = 0;
+	result->exit_after_injection = 1;
 
 	// injection arguments
 	result->args_size     = 0;
 	result->size_last_arg = 0;
 	result->argc          = 0;
 	result->argv          = NULL;
-
-	// Set Type
-	result->type = VARIABLE;
 
 	return result;
 }
@@ -709,9 +709,11 @@ struct injection *consolidate(struct injection *injection)
 		PRINT_WARNING("Injection code length is <= 0\n");
 	}
 
+	size_t blob_size = injection_size(injection);
+
 	// Allocate memory for the whole injection blob
 	// this includes metadata, module name, code and arguments
-	consolidated_data = (char *)MALLOC(injection_size(injection));
+	consolidated_data = (char *)MALLOC(blob_size);
 
 	if (!consolidated_data) {
 		PRINT_ERROR("Could not allocated memory!\n");

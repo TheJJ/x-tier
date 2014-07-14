@@ -1042,7 +1042,7 @@ void generate_shellcode(struct input_elf_file *f,
 	}
 	free(patches);
 
-	// Symmap
+	// Sysmap
 	printf("\t -> Writing Symmap begin... 0x%016llx ", system_map_begin);
 	write_int_reversed(inject_file, system_map_begin);
 	printf("OK!\n");

@@ -23,7 +23,10 @@ typedef unsigned long long u64;
 
 /* OUTPUT Delimiters for external data transfers. */
 #define XTIER_EXTERNAL_OUTPUT_BEGIN "####### X-TIER OUTPUT BEGIN #######"
-#define XTIER_EXTERNAL_OUTPUT_END "####### X-TIER OUTPUT END #######"
+#define XTIER_EXTERNAL_OUTPUT_END   "####### X-TIER OUTPUT END #######"
+
+#define XTIER_EXTERNAL_COMMAND_RETURN_VALUE_FORMAT "0x%016lx"
+#define XTIER_EXTERNAL_COMMAND_RETURN_VALUE_SIZE 18
 
 /* Tracing Modes */
 #define XTIER_HLT_EXIT 1ULL << 35

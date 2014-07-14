@@ -34,6 +34,7 @@ int stat(char *path)
 		printk("UID %d\n", k.uid);
 		result = cp_new_stat(&k, &s, sizeof(struct kstat));
 		printk("new UID %d\n", s.st_uid);
+		printk("transfering back the stat struct...\n");
 		data_transfer((char *)&s, sizeof(struct stat));
 		return result;
 	}
