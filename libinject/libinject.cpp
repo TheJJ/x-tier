@@ -150,7 +150,9 @@ int receive_data_chunk(struct received_data *data) {
 	realloc_recv_data(data);
 
 	// Read data, maximum length equals free recv buffer memory size
-	n = read(injection_output_fd, ((uint8_t *)data->data + data->length), (data->allocated - data->length));
+	char *storage_pos = (char *)(data->data + data->length);
+	size_t max_read = data->allocated - data->length;
+	n = read(injection_output_fd, storage_pos, max_read);
 
 	if (n < 0) {
 		PRINT_ERROR("An error (%d) occurred while receiving the data! errno: %d = %s\n", n, errno, strerror(errno));
@@ -218,7 +220,7 @@ bool receive_data(struct received_data *ret) {
 	// Receive return value
 	ret->return_value  = XTIER_external_command_extract_return_value((char *)ret->data, ret->length);
 	ret->length       -= XTIER_EXTERNAL_COMMAND_RETURN_VALUE_SIZE;
-	PRINT_DEBUG("Received return value %ld!\n", ret->return_value);
+	PRINT_DEBUG("Received function return value %ld!\n", ret->return_value);
 
 	// Notice that we currently _NOT_ remove the end marker and the return value from the
 	// received data. May be in the future.
@@ -291,6 +293,8 @@ bool inject_module(struct injection *injection, struct received_data *data) {
 
 	// Prepare redirect
 	re.type = PIPE;
+	re.stream = NULL;
+	memset(re.filename, 0, sizeof(re.filename));
 	strcpy(re.filename, injection_output_pipe_filename);
 
 	// Write cmd
