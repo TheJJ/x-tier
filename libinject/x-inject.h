@@ -2,7 +2,7 @@
 #define _X_INJECT_H_
 
 #include <stddef.h>
-#include <QString>
+#include <string>
 
 #include "X-TIER.h"
 
@@ -44,7 +44,7 @@ const char *injection_output_pipe_filename = "/tmp/pipe_x-tier_to_ext";
  */
 struct file_state {
 	int fd;                //!< File pointer that we use for this file
-	QString path;          //!< Path to the file
+	std::string path;      //!< Path to the file
 	int flags;             //!< Flags that were used to open the file
 	int mode;              //!< Mode that was used to open the file
 	unsigned int position; //!< Current position in the file in case of multiple reads
@@ -55,7 +55,7 @@ struct received_data {
 	int      length;
 	int      allocated;
 	int64_t  return_value;
-	void    *data;
+	char     *data;
 };
 
 

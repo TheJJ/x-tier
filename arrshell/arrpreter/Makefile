@@ -1,6 +1,6 @@
 #makefile for the arrshell pin module
 
-
+CXX             = g++
 CXXFLAGS        = -O2 -std=c++11 -Wall -fPIC -fno-stack-protector -fomit-frame-pointer -fno-strict-aliasing #-Werror
 PIN_DIR         = ../pin
 XTIER_DIR       = ../../x-tier
@@ -8,11 +8,10 @@ QEMU_DIR        = ../../qemu
 
 LIBINJECT_DIR   = ../../libinject/
 
-INCLUDEDIRS = -I$(XTIER_DIR) -I$(QEMU_DIR) -I$(PIN_DIR)/source/tools/InstLib -I$(PIN_DIR)/source/include/pin -I$(PIN_DIR)/source/include/pin/gen -I$(PIN_DIR)/extras/components/include -I$(PIN_DIR)/extras/xed2-intel64/include $(shell pkg-config QtCore --cflags)
+INCLUDEDIRS = -I$(XTIER_DIR) -I$(QEMU_DIR) -I$(PIN_DIR)/source/tools/InstLib -I$(PIN_DIR)/source/include/pin -I$(PIN_DIR)/source/include/pin/gen -I$(PIN_DIR)/extras/components/include -I$(PIN_DIR)/extras/xed2-intel64/include
 
 LINKDIRS = -L$(PIN_DIR)/intel64/lib -L$(PIN_DIR)/intel64/lib-ext -L$(PIN_DIR)/extras/xed2-intel64/lib  -L$(PIN_DIR)/intel64/runtime/libelf
-#LINKLIBS = $(shell pkg-config QtCore --libs) -lpin -lxed -ldwarf -lelf -ldl
-LINKLIBS = $(shell pkg-config QtCore --libs) -lpin -lelf -ldwarf -L$(LIBINJECT_DIR) -linject -Wl,-rpath $(LIBINJECT_DIR)
+LINKLIBS = -lpin -lelf -ldwarf -L$(LIBINJECT_DIR) -linject -Wl,-rpath $(LIBINJECT_DIR)
 
 SHAREDLIBFLAGS = -shared -Wl,--hash-style=sysv -Wl,-Bsymbolic -Wl,--version-script=$(PIN_DIR)/source/include/pin/pintool.ver
 

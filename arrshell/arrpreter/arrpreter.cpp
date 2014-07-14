@@ -10,6 +10,8 @@
 #include <syscall.h>
 #include <string.h>
 #include <time.h>
+#include <string>
+#include <unordered_map>
 
 #include <sys/stat.h>
 #include <sys/socket.h>
@@ -26,8 +28,6 @@
 #include "X-TIER/X-TIER_external_command.h"
 
 #include "pin.H"
-
-#include <QHash>
 
 
 #include "../../libinject/x-inject.h"
@@ -57,19 +57,17 @@ bool             updateContext      = false;
 SYSCALL_STANDARD sysCallStd         = SYSCALL_STANDARD_INVALID;
 int64_t          syscall_return_val = 0;
 
-QHash<int, struct file_state> files;
+std::unordered_map<int, struct file_state> files;
 // We leave some unused handles for STDIN, STDOUT etc.
 unsigned int file_handles = FILE_DESCRIPTOR_OFFSET;
 
-// TODO: unglobalize
-struct received_data recv_data;
 
+struct received_data recv_data;
 
 void OnOpen(CONTEXT *ctxt, SYSCALL_STANDARD std) {
 	char *path  = (char *)PIN_GetSyscallArgument(ctxt, std, 0);
 	int   flags = (int)PIN_GetSyscallArgument(ctxt, std, 1);
 	int   mode  = (int)PIN_GetSyscallArgument(ctxt, std, 2);
-
 
 	// Try to open the file within the guest.
 	struct injection *injection = new_injection(MODULE_PREFIX "open.inject");
@@ -99,13 +97,13 @@ void OnOpen(CONTEXT *ctxt, SYSCALL_STANDARD std) {
 		// Create file descriptor
 		struct file_state fd;
 		fd.fd       = file_handles;
-		fd.path     = QString(path);
+		fd.path     = path;
 		fd.flags    = flags;
 		fd.mode     = mode;
 		fd.position = 0;
 		fd.getdents = 0;
 
-		files.insert(file_handles, fd);
+		files[file_handles] = fd;
 
 		// Return our handle
 		syscall_return_val = file_handles;
@@ -156,13 +154,13 @@ void OnOpenAt(CONTEXT *ctxt, SYSCALL_STANDARD std) {
 
 		file_handles++;
 		fd.fd       = file_handles;
-		fd.path     = QString(path);
+		fd.path     = path;
 		fd.flags    = flags;
 		fd.mode     = mode;
 		fd.position = 0;
 		fd.getdents = 0;
 
-		files.insert(file_handles, fd);
+		files[file_handles] = fd;
 
 		// Return our handle fd id
 		syscall_return_val = file_handles;
@@ -176,7 +174,6 @@ void OnOpenAt(CONTEXT *ctxt, SYSCALL_STANDARD std) {
 	skip_next_syscall = true;
 }
 
-
 void OnGetdents(CONTEXT *ctxt, SYSCALL_STANDARD std) {
 	int fd = (int)PIN_GetSyscallArgument(ctxt, std, 0);
 	char *dirp = (char *)PIN_GetSyscallArgument(ctxt, std, 1);
@@ -185,12 +182,12 @@ void OnGetdents(CONTEXT *ctxt, SYSCALL_STANDARD std) {
 	struct injection *injection = NULL;
 	struct file_state fs;
 
-	if (!files.contains(fd)) {
+	if (files.find(fd) == files.end()) {
 		PRINT_ERROR("File Descriptor %d unkown!\n", fd);
 		return;
 	}
 
-	fs = files.take(fd);
+	fs = files[fd];
 
 	// We only inject on the first getdents call
 	if (!fs.getdents) {
@@ -201,14 +198,14 @@ void OnGetdents(CONTEXT *ctxt, SYSCALL_STANDARD std) {
 		injection_load_code(injection);
 
 		// Args
-		add_string_argument(injection, fs.path.toLocal8Bit().data());
+		add_string_argument(injection, fs.path.c_str());
 
 		// Consolidate
 		injection = consolidate(injection);
 
 		// Go
 		PRINT_DEBUG("Trying to get directory contents of '%s'...\n",
-		            fs.path.toLocal8Bit().data());
+		            fs.path.c_str());
 		inject_module(injection, &recv_data);
 
 		free_injection(injection);
@@ -261,7 +258,7 @@ void OnGetdents(CONTEXT *ctxt, SYSCALL_STANDARD std) {
 	}
 
 	// Insert update object
-	files.insert(fs.fd, fs);
+	files[fs.fd] = fs;
 
 	// Skip system call
 	skip_next_syscall = true;
@@ -277,12 +274,12 @@ void OnRead(CONTEXT *ctxt, SYSCALL_STANDARD std) {
 	struct file_state fs;
 
 	// take the corresponding file_state from our stored file state dict
-	if (!files.contains(fd)) {
+	if (files.find(fd) == files.end()) {
 		PRINT_ERROR("File Descriptor %d unkown!\n", fd);
 		return;
 	}
 
-	fs = files.take(fd);
+	fs = files[fd];
 
 	if (fs.position != 0) {
 		PRINT_WARNING("starting to read at position %d\n", fs.position);
@@ -295,7 +292,7 @@ void OnRead(CONTEXT *ctxt, SYSCALL_STANDARD std) {
 	injection_load_code(injection);
 
 	// Args
-	add_string_argument(injection, fs.path.toLocal8Bit().data());
+	add_string_argument(injection, fs.path.c_str());
 	add_int_argument(injection, fs.flags);
 	add_int_argument(injection, fs.position);
 	add_int_argument(injection, buf_size);
@@ -304,8 +301,7 @@ void OnRead(CONTEXT *ctxt, SYSCALL_STANDARD std) {
 	injection = consolidate(injection);
 
 	// Go
-	PRINT_DEBUG("Trying to read %d bytes from file '%s'...\n", buf_size,
-	            fs.path.toLocal8Bit().data());
+	PRINT_DEBUG("Trying to read %d bytes from file '%s'...\n", buf_size, fs.path.c_str());
 
 	inject_module(injection, &recv_data);
 
@@ -331,7 +327,7 @@ void OnRead(CONTEXT *ctxt, SYSCALL_STANDARD std) {
 	free_injection(injection);
 
 	// Insert updated object
-	files.insert(fs.fd, fs);
+	files[fs.fd] = fs;
 
 	// Skip system call
 	skip_next_syscall = true;
@@ -375,12 +371,12 @@ void OnSeek(CONTEXT *ctxt, SYSCALL_STANDARD std) {
 
 	struct file_state fs;
 
-	if (!files.contains(fd)) {
+	if (files.find(fd) == files.end()) {
 		PRINT_ERROR("File Descriptor %d unkown!\n", fd);
 		return;
 	}
 
-	fs = files.take(fd);
+	fs = files[fd];
 
 	switch (whence) {
 	case SEEK_SET:
@@ -396,7 +392,7 @@ void OnSeek(CONTEXT *ctxt, SYSCALL_STANDARD std) {
 	}
 
 	// Insert updated object
-	files.insert(fs.fd, fs);
+	files[fs.fd] = fs;
 }
 
 
@@ -405,7 +401,7 @@ void OnClose(CONTEXT *ctxt, SYSCALL_STANDARD std) {
 	int fd = (int)PIN_GetSyscallArgument(ctxt, std, 0);
 
 	// Remove from hash
-	files.remove(fd);
+	files.erase(fd);
 
 	// Set return value and skip call
 	syscall_return_val = 0;
