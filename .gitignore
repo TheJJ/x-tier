@@ -23,3 +23,4 @@ modules.order
 .tmp_versions
 *.ko.cmd
 *.inject
+/tmp/
