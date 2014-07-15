@@ -67,10 +67,15 @@ int strpcmp(const char *search, const char *prefix) {
 	return strncmp(search, prefix, strlen(prefix));
 }
 
-void OnOpen(CONTEXT *ctxt, SYSCALL_STANDARD std) {
-	char *path  = (char *)PIN_GetSyscallArgument(ctxt, std, 0);
-	int   flags = (int)PIN_GetSyscallArgument(ctxt, std, 1);
-	int   mode  = (int)PIN_GetSyscallArgument(ctxt, std, 2);
+void OnOpen(CONTEXT *ctxt, SYSCALL_STANDARD std, bool openat) {
+	int base_arg_id = 0;
+	if (openat) {
+		base_arg_id += 1;
+	}
+
+	char *path  = (char *)PIN_GetSyscallArgument(ctxt, std, base_arg_id++);
+	int   flags = (int)PIN_GetSyscallArgument(ctxt, std, base_arg_id++);
+	int   mode  = (int)PIN_GetSyscallArgument(ctxt, std, base_arg_id++);
 
 	struct received_data recv_data;
 
@@ -107,6 +112,7 @@ void OnOpen(CONTEXT *ctxt, SYSCALL_STANDARD std) {
 		fd.mode     = mode;
 		fd.position = 0;
 		fd.getdents = 0;
+		fd.close_on_exec = 0;
 
 		files[file_handles] = fd;
 
@@ -122,65 +128,6 @@ void OnOpen(CONTEXT *ctxt, SYSCALL_STANDARD std) {
 	skip_next_syscall = true;
 }
 
-
-void OnOpenAt(CONTEXT *ctxt, SYSCALL_STANDARD std) {
-	char *path  = (char *)PIN_GetSyscallArgument(ctxt, std, 1);
-	int   flags = (int)PIN_GetSyscallArgument(ctxt, std, 2);
-	int   mode  = (int)PIN_GetSyscallArgument(ctxt, std, 3);
-
-	struct received_data recv_data;
-
-	// Try to open the file within the guest.
-	// Notice that we handle an openAt currently using open.
-	struct injection *injection = new_injection(MODULE_PREFIX "open.inject");
-
-	// Code
-	injection_load_code(injection);
-
-	// Args
-	add_string_argument(injection, path);
-	add_int_argument(injection, flags);
-	add_int_argument(injection, mode);
-
-	// Consolidate
-	injection = consolidate(injection);
-
-	print_injection(injection);
-
-	// Go
-	PRINT_DEBUG("Trying to open file '%s' within the guest...\n", path);
-	inject_module(injection, &recv_data);
-
-	free_injection(injection);
-
-	if (recv_data.return_value >= 0) {
-		// File can be opened
-		PRINT_DEBUG("Could open file '%s'\n", path);
-
-		// Create file descriptor
-		struct file_state fd;
-
-		file_handles++;
-		fd.fd       = file_handles;
-		fd.path     = path;
-		fd.flags    = flags;
-		fd.mode     = mode;
-		fd.position = 0;
-		fd.getdents = 0;
-
-		files[file_handles] = fd;
-
-		// Return our handle fd id
-		syscall_return_val = file_handles;
-	}
-	else {
-		PRINT_DEBUG("Could not open file '%s'\n", path);
-		syscall_return_val = -1;
-	}
-
-	// Skip system call
-	skip_next_syscall = true;
-}
 
 void OnGetdents(CONTEXT *ctxt, SYSCALL_STANDARD std) {
 	int fd = (int)PIN_GetSyscallArgument(ctxt, std, 0);
@@ -339,7 +286,7 @@ void OnRead(CONTEXT *ctxt, SYSCALL_STANDARD std) {
 }
 
 
-void OnStat(CONTEXT *ctxt, SYSCALL_STANDARD std) {
+void OnStat(CONTEXT *ctxt, SYSCALL_STANDARD std, bool do_fdlookup) {
 
 	struct received_data recv_data;
 
@@ -349,19 +296,36 @@ void OnStat(CONTEXT *ctxt, SYSCALL_STANDARD std) {
 	// Code
 	injection_load_code(injection);
 
-	// Args
-	add_string_argument(injection, (char *)PIN_GetSyscallArgument(ctxt, std, 0));
+	const char *stat_path = NULL;
+
+	if (not do_fdlookup) {
+		stat_path = (char *)PIN_GetSyscallArgument(ctxt, std, 0);
+	}
+	else {
+		int stat_fd = (int)PIN_GetSyscallArgument(ctxt, std, 0);
+
+		if (files.find(stat_fd) == files.end()) {
+			syscall_return_val = -EBADF;
+			goto out;
+		}
+		stat_path = files[stat_fd].path.c_str();
+		PRINT_DEBUG("Looked up: fd %d => '%s'\n", stat_fd, stat_path);
+	}
+
+	add_string_argument(injection, stat_path);
 
 	// Consolidate
 	injection = consolidate(injection);
 
 	// Go
-	PRINT_DEBUG("Trying to stat file '%s'...\n", (char *)PIN_GetSyscallArgument(ctxt, std, 0));
+	PRINT_DEBUG("Trying to stat file '%s'...\n", stat_path);
 	inject_module(injection, &recv_data);
 
 	// Copy stat data
 	memcpy((char *)PIN_GetSyscallArgument(ctxt, std, 1), recv_data.data, recv_data.length);
+	syscall_return_val = recv_data.return_value;
 
+out:
 	// Skip system call
 	skip_next_syscall = true;
 
@@ -380,30 +344,27 @@ void OnSeek(CONTEXT *ctxt, SYSCALL_STANDARD std) {
 	long position = (long)PIN_GetSyscallArgument(ctxt, std, 1);
 	int  whence   = (int)PIN_GetSyscallArgument(ctxt, std, 2);
 
-	struct file_state fs;
+	struct file_state *fs;
 
 	if (files.find(fd) == files.end()) {
 		PRINT_ERROR("File Descriptor %d unkown!\n", fd);
 		return;
 	}
 
-	fs = files[fd];
+	fs = &files[fd];
 
 	switch (whence) {
 	case SEEK_SET:
-		fs.position         = position;
+		fs->position         = position;
 		syscall_return_val  = position;
 		skip_next_syscall   = true;
 		break;
 	case SEEK_CUR:
-		fs.position        += position;
-		syscall_return_val  = fs.position;
+		fs->position        += position;
+		syscall_return_val  = fs->position;
 		skip_next_syscall   = true;
 		break;
 	}
-
-	// Insert updated object
-	files[fs.fd] = fs;
 }
 
 
@@ -418,6 +379,55 @@ void OnClose(CONTEXT *ctxt, SYSCALL_STANDARD std) {
 	syscall_return_val = 0;
 	skip_next_syscall  = true;
 }
+
+void OnFcntl(CONTEXT *ctxt, SYSCALL_STANDARD std) {
+	int fd        = (int)PIN_GetSyscallArgument(ctxt, std, 0);
+	int operation = (int)PIN_GetSyscallArgument(ctxt, std, 1);
+
+	if (files.find(fd) == files.end()) {
+		PRINT_ERROR("File Descriptor %d unkown!\n", fd);
+		return;
+	}
+
+	syscall_return_val = 0;
+	skip_next_syscall = true;
+
+	//see include/uapi/asm-generic/fcntl.h
+	switch (operation) {
+
+	case F_DUPFD:
+		PRINT_DEBUG("duplicating fd %d\n", fd);
+		//create fd copy.
+		file_handles++;
+
+		files[file_handles] = files[fd];
+		syscall_return_val = file_handles;
+		break;
+
+	case F_GETFL:
+		PRINT_DEBUG("getting open flags for fd %d\n", fd);
+		syscall_return_val = files[fd].flags;
+		break;
+
+	case F_GETFD:
+		PRINT_DEBUG("getting fd flags (close_on_exec) for fd %d\n", fd);
+		syscall_return_val = files[fd].close_on_exec;
+		break;
+
+	case F_SETFD: {
+		int new_coe = (int)PIN_GetSyscallArgument(ctxt, std, 2);
+		PRINT_DEBUG("setting fd flags (close_on_exec) for fd %d to %d\n", fd, new_coe);
+		files[fd].close_on_exec = new_coe;
+		break;
+	}
+	default:
+		PRINT_ERROR("unknown/uninplemented fcntl operation %d!\n", operation);
+		syscall_return_val = -1;
+		errno = EBADF;
+		return;
+	}
+}
+
 
 
 void OnImageLoad(IMG img, void *v) {
@@ -457,6 +467,7 @@ void OnSysCall(CONTEXT *ctxt) {
 		case __NR_close:
 		case __NR_fstat:
 		case __NR_lseek:
+		case __NR_fcntl:
 			fd = (int) PIN_GetSyscallArgument(ctxt, std, 0);
 			break;
 		}
@@ -469,7 +480,7 @@ void OnSysCall(CONTEXT *ctxt) {
 			    strstr(path, "locale") != NULL ||
 			    strpcmp(path, "/proc/self/") == 0 ||
 			    strpcmp(path, "/dev/tty") == 0) {
-				PRINT_DEBUG("path filter matched, running syscall %d on host.\n", current_syscall);
+				PRINT_DEBUG("path filter matched on %s, syscall %d host.\n", path, current_syscall);
 				return;
 			}
 		}
@@ -477,7 +488,7 @@ void OnSysCall(CONTEXT *ctxt) {
 		if (fd >= 0) {
 			// Ignore fd 0-2
 			if (fd < FILE_DESCRIPTOR_OFFSET) {
-				PRINT_DEBUG("fd filter matched, running syscall %d on host.\n", current_syscall);
+				PRINT_DEBUG("fd filter matched (%d), running syscall %d on host.\n", fd, current_syscall);
 				return;
 			}
 		}
@@ -485,52 +496,57 @@ void OnSysCall(CONTEXT *ctxt) {
 		// Process System call
 		switch (current_syscall) {
 		case __NR_getdents:
-			PRINT_DEBUG("This is a getdents system call. Its buffer is located @ 0x%lx.\n",
+			PRINT_DEBUG("getdents system call. Its buffer is located @ 0x%lx.\n",
 			            PIN_GetSyscallArgument(ctxt, std, 1));
 			OnGetdents(ctxt, std);
 			break;
 		case __NR_open:
-			PRINT_DEBUG("This is an open system call which tries to open directory '%s'.\n",
+			PRINT_DEBUG("open system call which tries to open directory '%s'.\n",
 			            (char *)PIN_GetSyscallArgument(ctxt, std, 0));
-			OnOpen(ctxt, std);
+			OnOpen(ctxt, std, false);
 			break;
 		case __NR_openat:
-			PRINT_DEBUG("This is an openAt system call which tries to open directory '%s'.\n",
+			PRINT_DEBUG("openat system call which tries to open directory '%s'.\n",
 			            (char *)PIN_GetSyscallArgument(ctxt, std, 1));
-			OnOpenAt(ctxt, std);
+			OnOpen(ctxt, std, true);
 			break;
 		case __NR_close:
-			PRINT_DEBUG("This is an close system call which tries to close fd '%d'.\n",
+			PRINT_DEBUG("close system call which tries to close fd '%d'.\n",
 			            (int)PIN_GetSyscallArgument(ctxt, std, 0));
 			OnClose(ctxt, std);
 			break;
 		case __NR_fstat:
-			PRINT_DEBUG("This is an fstat system call on fd '%d'.\n",
+			PRINT_DEBUG("fstat system call on fd '%d'.\n",
 			            (int)PIN_GetSyscallArgument(ctxt, std, 0));
-			//OnStat(ctxt, std);
+			OnStat(ctxt, std, true);
 			break;
 		case __NR_stat:
-			PRINT_DEBUG("This is an stat system call on path '%s'.\n",
+			PRINT_DEBUG("stat system call on path '%s'.\n",
 			            (char *)PIN_GetSyscallArgument(ctxt, std, 0));
-			OnStat(ctxt, std);
+			OnStat(ctxt, std, false);
 			break;
 		case __NR_lstat:
-			PRINT_DEBUG("This is an lstat system call on path '%s'.\n",
+			PRINT_DEBUG("lstat system call on path '%s'.\n",
 			            (char *)PIN_GetSyscallArgument(ctxt, std, 0));
 			break;
 		case __NR_read:
-			PRINT_DEBUG("This is an read system call on fd %d.\n",
+			PRINT_DEBUG("read system call on fd %d.\n",
 			            (int)PIN_GetSyscallArgument(ctxt, std, 0));
 			OnRead(ctxt, std);
 			break;
 		case __NR_write:
-			PRINT_DEBUG("This is an write system call on fd %d.\n",
+			PRINT_DEBUG("write system call on fd %d.\n",
 			            (int)PIN_GetSyscallArgument(ctxt, std, 0));
 			break;
 		case __NR_lseek:
-			PRINT_DEBUG("This is an lseek system call on fd %d.\n",
+			PRINT_DEBUG("lseek system call on fd %d.\n",
 			            (int)PIN_GetSyscallArgument(ctxt, std, 0));
 			OnSeek(ctxt, std);
+			break;
+		case __NR_fcntl:
+			PRINT_DEBUG("fcntl system call on fd %d.\n",
+			            (int)PIN_GetSyscallArgument(ctxt, std, 0));
+			OnFcntl(ctxt, std);
 			break;
 		}
 	}
@@ -554,7 +570,7 @@ void OnSysCall(CONTEXT *ctxt) {
 		PIN_ExecuteAt(ctxt);
 	}
 	else {
-		PRINT_DEBUG("System call will be executed...\n");
+		PRINT_DEBUG("System call %d will be executed now...\n", current_syscall);
 	}
 }
 
@@ -587,6 +603,7 @@ void OnInstruction(INS ins, void *v) {
 
 
 void Fini(INT32 code, VOID *v) {
+	PRINT_INFO("exiting PIN instrumentation\n");
 	terminate_connection();
 }
 
