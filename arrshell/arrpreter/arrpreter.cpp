@@ -115,6 +115,7 @@ void OnOpen(CONTEXT *ctxt, SYSCALL_STANDARD std) {
 	}
 	else {
 		PRINT_DEBUG("Could not open file '%s'\n", path);
+		syscall_return_val = recv_data.return_value;
 	}
 
 	// Skip system call
