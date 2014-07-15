@@ -133,7 +133,7 @@ int receive_data_chunk(struct received_data *data) {
 	int n = 0;
 
 	// Is the data buffer set up?
-	if (!data->data) {
+	if (data->data == nullptr) {
 		data->allocated = 4096;
 		data->length    = 0;    //nothing stored yet.
 

@@ -52,6 +52,19 @@ struct file_state {
 };
 
 struct received_data {
+	received_data()
+		:
+		length(0),
+		allocated(0),
+		return_value(-1),
+		data(nullptr) {}
+
+	~received_data() {
+		if (data != nullptr) {
+			free(data);
+		}
+	}
+
 	int      length;
 	int      allocated;
 	int64_t  return_value;

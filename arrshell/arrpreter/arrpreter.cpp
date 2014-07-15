@@ -62,8 +62,6 @@ std::unordered_map<int, struct file_state> files;
 unsigned int file_handles = FILE_DESCRIPTOR_OFFSET;
 
 
-struct received_data recv_data;
-
 int strpcmp(const char *search, const char *prefix) {
 	return strncmp(search, prefix, strlen(prefix));
 }
@@ -72,6 +70,8 @@ void OnOpen(CONTEXT *ctxt, SYSCALL_STANDARD std) {
 	char *path  = (char *)PIN_GetSyscallArgument(ctxt, std, 0);
 	int   flags = (int)PIN_GetSyscallArgument(ctxt, std, 1);
 	int   mode  = (int)PIN_GetSyscallArgument(ctxt, std, 2);
+
+	struct received_data recv_data;
 
 	// Try to open the file within the guest.
 	struct injection *injection = new_injection(MODULE_PREFIX "open.inject");
@@ -125,6 +125,8 @@ void OnOpenAt(CONTEXT *ctxt, SYSCALL_STANDARD std) {
 	char *path  = (char *)PIN_GetSyscallArgument(ctxt, std, 1);
 	int   flags = (int)PIN_GetSyscallArgument(ctxt, std, 2);
 	int   mode  = (int)PIN_GetSyscallArgument(ctxt, std, 3);
+
+	struct received_data recv_data;
 
 	// Try to open the file within the guest.
 	// Notice that we handle an openAt currently using open.
@@ -182,6 +184,8 @@ void OnGetdents(CONTEXT *ctxt, SYSCALL_STANDARD std) {
 	int fd = (int)PIN_GetSyscallArgument(ctxt, std, 0);
 	char *dirp = (char *)PIN_GetSyscallArgument(ctxt, std, 1);
 	int count = (int)PIN_GetSyscallArgument(ctxt, std, 2);
+
+	struct received_data recv_data;
 
 	struct injection *injection = NULL;
 	struct file_state fs;
@@ -274,6 +278,8 @@ void OnRead(CONTEXT *ctxt, SYSCALL_STANDARD std) {
 	char *buf = (char *)PIN_GetSyscallArgument(ctxt, std, 1);
 	int buf_size = (int)PIN_GetSyscallArgument(ctxt, std, 2);
 
+	struct received_data recv_data;
+
 	struct injection *injection = NULL;
 	struct file_state fs;
 
@@ -340,6 +346,8 @@ void OnRead(CONTEXT *ctxt, SYSCALL_STANDARD std) {
 
 void OnStat(CONTEXT *ctxt, SYSCALL_STANDARD std) {
 
+	struct received_data recv_data;
+
 	// Setup Injection
 	struct injection *injection = new_injection(MODULE_PREFIX "stat.inject");
 
@@ -367,8 +375,12 @@ void OnStat(CONTEXT *ctxt, SYSCALL_STANDARD std) {
 }
 
 
+/**
+ * seek syscall.
+ * currently, we assume the seek is successful.
+ * this may be checked by another injection in the future.
+ */
 void OnSeek(CONTEXT *ctxt, SYSCALL_STANDARD std) {
-	// We simply assume the seek succeeds
 	int  fd       = (int)PIN_GetSyscallArgument(ctxt, std, 0);
 	long position = (long)PIN_GetSyscallArgument(ctxt, std, 1);
 	int  whence   = (int)PIN_GetSyscallArgument(ctxt, std, 2);
