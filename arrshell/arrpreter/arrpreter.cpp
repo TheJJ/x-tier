@@ -64,6 +64,10 @@ unsigned int file_handles = FILE_DESCRIPTOR_OFFSET;
 
 struct received_data recv_data;
 
+int strpcmp(const char *search, const char *prefix) {
+	return strncmp(search, prefix, strlen(prefix));
+}
+
 void OnOpen(CONTEXT *ctxt, SYSCALL_STANDARD std) {
 	char *path  = (char *)PIN_GetSyscallArgument(ctxt, std, 0);
 	int   flags = (int)PIN_GetSyscallArgument(ctxt, std, 1);
@@ -84,7 +88,7 @@ void OnOpen(CONTEXT *ctxt, SYSCALL_STANDARD std) {
 	injection = consolidate(injection);
 
 	// Go
-	PRINT_DEBUG("Trying to open file '%s' (flags %d, mode %d) within the guest...\n", path, flags, mode);
+	PRINT_DEBUG("Trying to open file '%s' (flags 0x%x, mode 0x%x) within the guest...\n", path, flags, mode);
 	inject_module(injection, &recv_data);
 
 	free_injection(injection);
@@ -429,7 +433,7 @@ void OnSysCall(CONTEXT *ctxt) {
 		current_syscall = PIN_GetSyscallNumber(ctxt, std);
 
 		PRINT_DEBUG("====================================================\n");
-		PRINT_DEBUG("Traced program is executing a syscall with number %d\n", current_syscall);
+		PRINT_DEBUG("catched syscall %d\n", current_syscall);
 
 		// Filter
 		switch (current_syscall) {
@@ -453,10 +457,11 @@ void OnSysCall(CONTEXT *ctxt) {
 		if (path) {
 			// Check if the host should handle this one
 			// Ignore the following paths
-			if (strncmp(path, "/usr/lib", strlen("/usr/lib")) == 0 ||
+			if (strpcmp(path, "/usr/lib") == 0 ||
 			    strstr(path, "locale") != NULL ||
-			    strncmp(path, "/proc/self/", strlen("/proc/self/")) == 0) {
-				PRINT_DEBUG("Path filter machted on system call %d!\n", current_syscall);
+			    strpcmp(path, "/proc/self/") == 0 ||
+			    strpcmp(path, "/dev/tty") == 0) {
+				PRINT_DEBUG("path filter matched, running syscall %d on host.\n", current_syscall);
 				return;
 			}
 		}
@@ -464,7 +469,7 @@ void OnSysCall(CONTEXT *ctxt) {
 		if (fd >= 0) {
 			// Ignore fd 0-2
 			if (fd < FILE_DESCRIPTOR_OFFSET) {
-				PRINT_DEBUG("FD filter machted on system call %d!\n", current_syscall);
+				PRINT_DEBUG("fd filter matched, running syscall %d on host.\n", current_syscall);
 				return;
 			}
 		}
