@@ -61,6 +61,7 @@ std::unordered_map<int, struct file_state> files;
 // We leave some unused handles for STDIN, STDOUT etc.
 unsigned int file_handles = FILE_DESCRIPTOR_OFFSET;
 
+void emergency_exit();
 
 int strpcmp(const char *search, const char *prefix) {
 	return strncmp(search, prefix, strlen(prefix));
@@ -317,16 +318,9 @@ void OnRead(CONTEXT *ctxt, SYSCALL_STANDARD std) {
 
 	if (recv_data.return_value >= buf_size) {
 		PRINT_WARNING("!\n!\n!\n READ MORE DATA THAN REQUESTED \n!\n!\n!\n");
+		emergency_exit();
 	}
-
-
-	// Copy stat data
-	if (recv_data.return_value > buf_size) {
-		memcpy(buf, recv_data.data, buf_size);
-		fs.position += buf_size;
-		syscall_return_val = buf_size;
-	}
-	else if (recv_data.return_value > 0) {
+	else if (recv_data.return_value >= 0) {
 		memcpy(buf, recv_data.data, recv_data.return_value);
 		fs.position        += recv_data.return_value;
 		syscall_return_val  = recv_data.return_value;
@@ -470,6 +464,7 @@ void OnSysCall(CONTEXT *ctxt) {
 			// Check if the host should handle this one
 			// Ignore the following paths
 			if (strpcmp(path, "/usr/lib") == 0 ||
+			    strpcmp(path, "/lib") == 0 ||
 			    strstr(path, "locale") != NULL ||
 			    strpcmp(path, "/proc/self/") == 0 ||
 			    strpcmp(path, "/dev/tty") == 0) {
@@ -592,6 +587,11 @@ void OnInstruction(INS ins, void *v) {
 
 void Fini(INT32 code, VOID *v) {
 	terminate_connection();
+}
+
+void emergency_exit() {
+	terminate_connection();
+	exit(1);
 }
 
 
