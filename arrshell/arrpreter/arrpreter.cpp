@@ -264,8 +264,8 @@ void OnRead(CONTEXT *ctxt, SYSCALL_STANDARD std) {
 
 	inject_module(injection, &recv_data);
 
-	if (recv_data.return_value >= buf_size) {
-		PRINT_WARNING("!\n!\n!\n READ MORE DATA THAN REQUESTED \n!\n!\n!\n");
+	if (recv_data.return_value > buf_size) {
+		PRINT_WARNING("read %ld bytes, but buffer is only %d big! aborting", recv_data.return_value, buf_size);
 		emergency_exit();
 	}
 	else if (recv_data.return_value >= 0) {
