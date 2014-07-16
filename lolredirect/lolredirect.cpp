@@ -50,26 +50,31 @@ struct decision {
 };
 
 
-/*
- * copy len bytes from process pid at address addr to destination dest
+/**
+ * traced to tracer memory copy.
+ * copy len bytes from trapped process at address addr to destination dest
  */
-int umoven(struct syscall_interception *trap, long addr, int len, char *dest) {
-	int n, nread;
-
+int tmemcpy(struct syscall_interception *trap, char *dest, const char *addr, ssize_t len, bool to_guest) {
 	struct iovec local[1], remote[1];
 
 	local[0].iov_base  = dest;
-	remote[0].iov_base = (void*)addr;
+	remote[0].iov_base = (void *)addr;
 	local[0].iov_len   = remote[0].iov_len = len;
 
-	n = process_vm_readv(trap->pid, local, 1, remote, 1, 0);
+	int n;
+	if (to_guest) {
+		n = process_vm_readv(trap->pid, local, 1, remote, 1, 0);
+	}
+	else {
+		n = process_vm_writev(trap->pid, local, 1, remote, 1, 0);
+	}
 
 	if (n == len) {
 		return 0;
 	}
 
 	if (n >= 0) {
-		printf("umoven: short read (%d < %d) @0x%lx\n", n, len, addr);
+		printf("tmemcpy: short read (%d < %ld) @%p\n", n, len, addr);
 		return -1;
 	}
 
@@ -78,21 +83,23 @@ int umoven(struct syscall_interception *trap, long addr, int len, char *dest) {
 		printf("process_vm_readv syscall unsupported!\n");
 		return -1;
 	case ESRCH:
-		/* the process is gone */
-		return -1;
+		return -1; //process is gone
 	case EFAULT:
 	case EIO:
 	case EPERM:
-		/* address space is inaccessible */
-		return -1;
+		return -1; //address space is inaccessible
 	default:
-		printf("unhandled error in umoven!\n");
+		printf("unhandled error in tmemcpy!\n");
 		return -1;
 	}
 }
 
 
-int umovestr(struct syscall_interception *trap, long addr, int len, char *dest) {
+/**
+ * traced to tracer string copy
+ * copies a string at addr of max length len of trapped process to our memory at dest
+ */
+int tstrncpy(struct syscall_interception *trap, char *dest, const char *addr, ssize_t len) {
 	constexpr int max_chunk_len = 256;
 	int n, nread;
 
@@ -112,7 +119,7 @@ int umovestr(struct syscall_interception *trap, long addr, int len, char *dest) 
 		}
 
 		// honor page boundaries, EFAULT otherwise while the \0 is in previous page
-		end_in_page = ((addr + chunk_len) & (4096 - 1));
+		end_in_page = (((size_t)addr + chunk_len) & (4096 - 1));
 		n = chunk_len - end_in_page;
 
 		if (chunk_len > end_in_page) {
@@ -140,18 +147,17 @@ int umovestr(struct syscall_interception *trap, long addr, int len, char *dest) 
 			printf("process_vm_readv syscall unsupported!\n");
 			return -1;
 		case ESRCH:
-			/* the process is gone */
-			return -1;
+			return -1; //the process is gone
 		case EFAULT:
 		case EIO:
 		case EPERM:
-			/* address space is inaccessible */
+			//address space is inaccessible
 			if (nread) {
-				printf("umovestr: short read (%d < %d) @0x%lx", nread, nread + len, addr);
+				printf("read too less: %d < %ld @%p", nread, nread + len, addr);
 			}
 			return -1;
 		default:
-			printf("unhandled error in umovestr!\n");
+			printf("unhandled error in tstrncpy!\n");
 			return -1;
 		}
 	}
@@ -171,9 +177,8 @@ struct decision redirect_decision(struct syscall_interception *trap) {
 
 	switch (trap->syscall_id) {
 	case SYS_open: {
-		//process_vm_readv();
 		char path[1024];
-		int n = umovestr(trap, trap->regs->rdi, 1024, path);
+		int n = tstrncpy(trap, path, (char *)trap->regs->rdi, 1024);
 
 		if (n > 0) {
 			printf("open: %s\n", path);
@@ -184,6 +189,7 @@ struct decision redirect_decision(struct syscall_interception *trap) {
 	}
 	case SYS_getuid:
 		ret.inject = true;
+		ret.redirect = true;
 		break;
 	}
 
@@ -239,6 +245,7 @@ int main() {
 			}
 
 			//let the syscall run, wait for syscall exit:
+			//TODO: patch kernel to allow syscall skip
 			ptrace(PTRACE_SYSCALL, pid, 0, 0);
 			wait(&status);
 

@@ -1,5 +1,5 @@
 
-CXXFLAGS = -g -O1 -std=c++11 -fPIC
+CXXFLAGS = -g -O1 -std=c++11 -Wall -Werror -Wpedantic -fPIC
 
 XTIER_DIR       = ../x-tier
 LIBINJECT_DIR   = ../libinject
