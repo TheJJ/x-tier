@@ -15,7 +15,7 @@ all: inject-test
 inject-test: inject-test.o libinject.so
 	$(CXX) $(CXXFLAGS) $(LDFLAGS) $^ $(LINKINJECT) -o $@
 
-libinject.so: libinject.o x-tier-userspace.o
+libinject.so: libinject.o x-tier-userspace.o strings.o error.o
 	$(CXX) -shared $(CXXFLAGS) $(LDFLAGS) $^ $(LINKLIBS) -o $@
 
 %.o: %.cpp

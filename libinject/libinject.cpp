@@ -38,7 +38,6 @@ long  totalCommunicationTime = 0;
 long  totalReceiveTime       = 0;
 long  injectionCount         = 0;
 
-
 bool create_injection_output_pipe(void) {
 	int ret = 0;
 
@@ -117,7 +116,7 @@ void realloc_recv_data(struct received_data *data) {
 	const int factor = 2;
 
 	if (data->length >= data->allocated) {
-		data->data = realloc(data->data, data->allocated * factor);
+		data->data = (char *)realloc(data->data, data->allocated * factor);
 
 		if (!data->data) {
 			PRINT_ERROR("Could not increase data reception memory!\n");
@@ -137,7 +136,7 @@ int receive_data_chunk(struct received_data *data) {
 		data->allocated = 4096;
 		data->length    = 0;    //nothing stored yet.
 
-		data->data      = malloc(data->allocated);
+		data->data      = (char *)malloc(data->allocated);
 
 		// Check allocation
 		if (!data->data) {
@@ -225,7 +224,7 @@ bool receive_data(struct received_data *ret) {
 	// Notice that we currently _NOT_ remove the end marker and the return value from the
 	// received data. May be in the future.
 	PRINT_DEBUG_FULL("Received end marker!\n");
-	PRINT_DEBUG("Data tansfer of %ld bytes complete...\n", ret->length);
+	PRINT_DEBUG("Data tansfer of %d bytes complete...\n", ret->length);
 
 	// Time Measurement
 	totalReceiveTime += (timer.elapsed() - tmpReceiveTime);
@@ -235,9 +234,6 @@ bool receive_data(struct received_data *ret) {
 
 
 bool inject_module(struct injection *injection, struct received_data *data) {
-	struct XTIER_external_command cmd;
-	struct XTIER_external_command_redirect re;
-
 	if (!injection) {
 		PRINT_ERROR("Injection structure is NULL!\n");
 		return false;
@@ -272,10 +268,9 @@ bool inject_module(struct injection *injection, struct received_data *data) {
 	// Open input pipe
 	PRINT_DEBUG_FULL("Opening Input Pipe...\n");
 
-	struct timespec input_pipe_delay {0, 100000000}; //0.1 s
-
 	//TODO: race condition! wait for qemu to create the file!
-	nanosleep(&input_pipe_delay, NULL);
+	//struct timespec input_pipe_delay {0, 100000000}; //0.1 s
+	//nanosleep(&input_pipe_delay, NULL);
 
 	if (!injection_input_fd) {
 		injection_input_fd = open(XTIER_EXTERNAL_COMMAND_PIPE, O_WRONLY);
@@ -286,32 +281,36 @@ bool inject_module(struct injection *injection, struct received_data *data) {
 		return false;
 	}
 
-	// Prepare cmd
+	struct XTIER_external_command cmd;
 	cmd.type = INJECTION;
 	cmd.data_len = injection_size(injection);
 	cmd.redirect = PIPE;
 
-	// Prepare redirect
+	struct XTIER_external_command_redirect re;
+	memset(&re, 0, sizeof(re));
 	re.type = PIPE;
 	re.stream = NULL;
-	memset(re.filename, 0, sizeof(re.filename));
 	strcpy(re.filename, injection_output_pipe_filename);
 
+	int n = sizeof(struct XTIER_external_command);
+
 	// Write cmd
-	PRINT_DEBUG_FULL("Sending external command struct...\n");
-	if (write(injection_input_fd, &cmd, sizeof(struct XTIER_external_command)) != sizeof(struct XTIER_external_command)) {
+	PRINT_DEBUG_FULL("Sending external command struct (size %d)..\n", n);
+	if (write(injection_input_fd, &cmd, n) != n) {
 		PRINT_ERROR("An error occurred while writing the command struct. Aborting...\n");
 		close(injection_input_fd);
 		injection_input_fd = 0;
+		send_monitor_command("cont\n");
 		return false;
 	}
 
-	//TODO: might be sent in multiple packets
-	PRINT_DEBUG_FULL("Sending external commmand redirect struct...\n");
-	if (write(injection_input_fd, &re, sizeof(struct XTIER_external_command_redirect)) != sizeof(struct XTIER_external_command_redirect)) {
+	n = sizeof(struct XTIER_external_command_redirect);
+	PRINT_DEBUG_FULL("Sending external commmand redirect struct (size %d)..\n", n);
+	if (write(injection_input_fd, &re, n) != n) {
 		PRINT_ERROR("An error occurred while writing the redirect struct. Aborting...\n");
 		close(injection_input_fd);
 		injection_input_fd = 0;
+		send_monitor_command("cont\n");
 		return false;
 	}
 
@@ -347,7 +346,7 @@ bool inject_module(struct injection *injection, struct received_data *data) {
 	totalInjectionTime += (timer.elapsed() - tmpInjectionTime);
 
 	//TODO: race condition again...
-	nanosleep(&input_pipe_delay, NULL);
+	//nanosleep(&input_pipe_delay, NULL);
 
 	// exit x-tier mode and resume vm
 	send_monitor_command("cont\n");

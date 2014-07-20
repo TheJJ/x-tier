@@ -3,9 +3,10 @@
 
 #include <stddef.h>
 #include <string>
+#include <cstring>
 
 #include "X-TIER.h"
-
+#include "error.h"
 
 #define ARR_DEBUG_FULL 6
 #define ARR_DEBUG 5
@@ -19,37 +20,22 @@
 #define msg_print(level, level_string, fmt, ...) \
 	do {\
 		if (DEBUG_LEVEL >= level) {\
-			printf("[ libinject - %s ] %d : %s(): " fmt, level_string, __LINE__, __func__, ##__VA_ARGS__);\
+			printf("[ libinject - %s ] %04d : %s(): " fmt, level_string, __LINE__, __func__, ##__VA_ARGS__);\
 		}\
 	} while (0)\
 
-#define PRINT_DEBUG_FULL(fmt, ...) msg_print(ARR_DEBUG_FULL, "DEBUG FULL", fmt, ##__VA_ARGS__)
-#define PRINT_DEBUG(fmt, ...)      msg_print(ARR_DEBUG,      "DEBUG",      fmt, ##__VA_ARGS__)
-#define PRINT_INFO(fmt, ...)       msg_print(ARR_INFO,       "INFO",       fmt, ##__VA_ARGS__)
-#define PRINT_WARNING(fmt, ...)    msg_print(ARR_WARNING,    "WARNING",    fmt, ##__VA_ARGS__)
-#define PRINT_ERROR(fmt, ...)      msg_print(ARR_ERROR,      "ERROR",      fmt, ##__VA_ARGS__)
+#define PRINT_DEBUG_FULL(fmt, ...) msg_print(ARR_DEBUG_FULL, "DEBUG+ ", fmt, ##__VA_ARGS__)
+#define PRINT_DEBUG(fmt, ...)      msg_print(ARR_DEBUG,      "DEBUG  ", fmt, ##__VA_ARGS__)
+#define PRINT_INFO(fmt, ...)       msg_print(ARR_INFO,       "INFO   ", fmt, ##__VA_ARGS__)
+#define PRINT_WARNING(fmt, ...)    msg_print(ARR_WARNING,    "WARNING", fmt, ##__VA_ARGS__)
+#define PRINT_ERROR(fmt, ...)      msg_print(ARR_ERROR,      "ERROR  ", fmt, ##__VA_ARGS__)
 
 
 /**
  * data transfer file where x-tier puts it's stuff and sends it to us.
  */
-const char *injection_output_pipe_filename = "/tmp/pipe_x-tier_to_ext";
+#define injection_output_pipe_filename "/tmp/pipe_x-tier_to_ext"
 
-
-/**
- * remembers the state of a opened file.
- *
- * each further call with the same file state then emulates
- * the "being open" by opening the fd again, and seeking.
- */
-struct file_state {
-	int fd;                //!< File pointer that we use for this file
-	std::string path;      //!< Path to the file
-	int flags;             //!< Flags that were used to open the file
-	int mode;              //!< Mode that was used to open the file
-	unsigned int position; //!< Current position in the file in case of multiple reads
-	unsigned int getdents; //!< Specifies if getdents is currently in progress
-};
 
 struct received_data {
 	received_data()
@@ -64,6 +50,34 @@ struct received_data {
 			free(data);
 		}
 	}
+
+	/** copy constructor */
+	received_data(received_data const &other) {
+		if (other.data != nullptr) {
+			this->data = (char *)malloc(other.allocated * sizeof(char));
+			memcpy(this->data, other.data, other.length);
+		}
+	}
+
+	/** assignment op */
+	received_data &operator=(received_data const &other) {
+		if (this->data != nullptr) {
+			free(this->data);
+		}
+
+		if (other.data != nullptr) {
+			this->data = (char *)malloc(other.allocated * sizeof(char));
+			memcpy(this->data, other.data, other.length);
+		}
+		return *this;
+	}
+
+	/** move constructor */
+	received_data(received_data &&other) {
+		this->data = other.data;
+		other.data = nullptr;
+	}
+
 
 	int      length;
 	int      allocated;
