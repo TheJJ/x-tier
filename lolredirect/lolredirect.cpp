@@ -1,20 +1,27 @@
+#include "lolredirect.h"
+
 #include <errno.h>
+#include <getopt.h>
 #include <stdio.h>
 #include <string.h>
 #include <sys/ptrace.h>
 #include <sys/reg.h>
 #include <sys/syscall.h>
 #include <sys/types.h>
-#include <sys/uio.h>
 #include <sys/user.h>
 #include <sys/wait.h>
-#include <unistd.h>
+
+#include "syscall_handler.h"
+#include "syscall_utils.h"
+
+#include "x-inject.h"
 
 //TODO: argparse
 #define TARGET "./target-test"
 
 #define HARMLESS_SYSCALL SYS_getuid
 
+constexpr bool print_syscalls = false;
 
 /*
  * rax  system call number
@@ -29,191 +36,122 @@
  * r12-r15,rbp,rbx saved by C code, not touched.
  */
 
-struct syscall_interception {
-	syscall_interception(int pid, int syscall_id, struct user_regs_struct *regs)
-		:
-		pid(pid),
-		syscall_id(syscall_id),
-		set_regs(false),
-		regs(regs) {
+
+struct decision redirect_decision(struct syscall_mod *trap) {
+	if (print_syscalls) {
+		trap->print_registers();
 	}
 
-	int pid;
-	int syscall_id;
-	bool set_regs;
-	struct user_regs_struct *regs;
-};
+	PRINT_DEBUG("encountered syscall %03d => %s\n", trap->syscall_id, syscall_name(trap->syscall_id));
 
-struct decision {
-	bool redirect;
-	bool inject;
-};
+	char path[max_path_len];
 
+	int fd = -1;
+	int n  = 0;
 
-/**
- * traced to tracer memory copy.
- * copy len bytes from trapped process at address addr to destination dest
- */
-int tmemcpy(struct syscall_interception *trap, char *dest, const char *addr, ssize_t len, bool to_guest) {
-	struct iovec local[1], remote[1];
+	//disable redirection by default
+	struct decision ret{false};
+	bool do_path_fd_test = true;
 
-	local[0].iov_base  = dest;
-	remote[0].iov_base = (void *)addr;
-	local[0].iov_len   = remote[0].iov_len = len;
+	//gather information about the trapped syscall
+	switch (trap->syscall_id) {
+	case SYS_open:
+	case SYS_stat:
+	case SYS_lstat:
+		n = util::tstrncpy(trap, path, (char *)trap->get_arg(0), max_path_len);
+		break;
+	case SYS_openat:
+		n = util::tstrncpy(trap, path, (char *)trap->get_arg(1), max_path_len);
+		break;
+	case SYS_write:
+	case SYS_read:
+	case SYS_close:
+	case SYS_fstat:
+	case SYS_lseek:
+	case SYS_fcntl:
+	case SYS_fadvise64:
+	case SYS_getdents:
+		fd = trap->get_arg(0);
+		break;
+	default:
+		do_path_fd_test = false;
+	}
 
-	int n;
-	if (to_guest) {
-		n = process_vm_readv(trap->pid, local, 1, remote, 1, 0);
+	if (ret.redirect == false && do_path_fd_test) {
+		if (n > 0) {
+			const char *prefixes[] = {
+				"/usr/lib/",
+				"/lib/",
+				"/lib64/",
+				"/proc/self/",
+				"/dev/tty",
+				"/etc/ld.so.cache",
+			};
+
+			bool host_path = false;
+
+			for (auto &prefix : prefixes) {
+				if (0 == util::strpcmp(path, prefix)) {
+					host_path = true;
+					break;
+				}
+			}
+
+			if (not host_path) {
+				if (0 != strstr(path, "locale")
+				    or 0 != strstr(path, "NOFWD")) {
+					host_path = true;
+				}
+			}
+
+			if (host_path) {
+				PRINT_DEBUG("\tpath on host: %s\n", path);
+				ret.redirect = false;
+			} else {
+				PRINT_DEBUG("\tpath on guest: %s\n", path);
+				ret.redirect = true;
+			}
+			ret.reason = redirect_reason::PATH;
+		}
+
+		if (fd >= 0) {
+			if (fd < FILE_DESCRIPTOR_OFFSET) {
+				PRINT_DEBUG("\tfd %d on host.\n", fd);
+				ret.redirect = false;
+			}
+			else {
+				PRINT_DEBUG("\tfd %d on guest.\n", fd);
+				ret.redirect = true;
+			}
+			ret.reason = redirect_reason::FD;
+		}
+	} else {
+		ret.redirect = false;
+		ret.reason = redirect_reason::NOTNEEDED;
+	}
+
+	if (ret.redirect) {
+		PRINT_DEBUG("\t`-> redirect syscall %d\n", trap->syscall_id);
 	}
 	else {
-		n = process_vm_writev(trap->pid, local, 1, remote, 1, 0);
-	}
-
-	if (n == len) {
-		return 0;
-	}
-
-	if (n >= 0) {
-		printf("tmemcpy: short read (%d < %ld) @%p\n", n, len, addr);
-		return -1;
-	}
-
-	switch (errno) {
-	case ENOSYS:
-		printf("process_vm_readv syscall unsupported!\n");
-		return -1;
-	case ESRCH:
-		return -1; //process is gone
-	case EFAULT:
-	case EIO:
-	case EPERM:
-		return -1; //address space is inaccessible
-	default:
-		printf("unhandled error in tmemcpy!\n");
-		return -1;
-	}
-}
-
-
-/**
- * traced to tracer string copy
- * copies a string at addr of max length len of trapped process to our memory at dest
- */
-int tstrncpy(struct syscall_interception *trap, char *dest, const char *addr, ssize_t len) {
-	constexpr int max_chunk_len = 256;
-	int n, nread;
-
-	nread = 0;
-	struct iovec local[1], remote[1];
-
-	local[0].iov_base = dest;
-	remote[0].iov_base = (void*)addr;
-
-	while (len > 0) {
-		int end_in_page;
-		int chunk_len;
-
-		chunk_len = len;
-		if (chunk_len > max_chunk_len) {
-			chunk_len = max_chunk_len;
-		}
-
-		// honor page boundaries, EFAULT otherwise while the \0 is in previous page
-		end_in_page = (((size_t)addr + chunk_len) & (4096 - 1));
-		n = chunk_len - end_in_page;
-
-		if (chunk_len > end_in_page) {
-			chunk_len -= end_in_page;
-		}
-
-		local[0].iov_len = remote[0].iov_len = chunk_len;
-
-		n = process_vm_readv(trap->pid, local, 1, remote, 1, 0);
-
-		if (n > 0) {
-			if (memchr(local[0].iov_base, '\0', n)) {
-				return 1;
-			}
-
-			local[0].iov_base   = (void *)(((char *)local[0].iov_base)  + n);
-			remote[0].iov_base  = (void *)(((char *)remote[0].iov_base) + n);
-			len                -= n;
-			nread              += n;
-			continue;
-		}
-
-		switch (errno) {
-		case ENOSYS:
-			printf("process_vm_readv syscall unsupported!\n");
-			return -1;
-		case ESRCH:
-			return -1; //the process is gone
-		case EFAULT:
-		case EIO:
-		case EPERM:
-			//address space is inaccessible
-			if (nread) {
-				printf("read too less: %d < %ld @%p", nread, nread + len, addr);
-			}
-			return -1;
-		default:
-			printf("unhandled error in tstrncpy!\n");
-			return -1;
-		}
-	}
-	return 0;
-}
-
-
-
-struct decision redirect_decision(struct syscall_interception *trap) {
-	struct decision ret{false, false};
-
-	printf("syscall %d: arg0: 0x%llx arg1: 0x%llx arg2: 0x%llx arg3: 0x%llx arg4: 0x%llx arg5: 0x%llx arg6: 0x%llx\n",
-	       trap->syscall_id, trap->regs->rdi,
-	       trap->regs->rsi, trap->regs->rdx,
-	       trap->regs->rcx, trap->regs->r8,
-	       trap->regs->r9, trap->regs->r10);
-
-	switch (trap->syscall_id) {
-	case SYS_open: {
-		char path[1024];
-		int n = tstrncpy(trap, path, (char *)trap->regs->rdi, 1024);
-
-		if (n > 0) {
-			printf("open: %s\n", path);
-		}
-
-		ret.redirect = false;
-		break;
-	}
-	case SYS_getuid:
-		ret.inject = true;
-		ret.redirect = true;
-		break;
+		PRINT_DEBUG("\t`-> syscall %d regular on host!\n", trap->syscall_id);
 	}
 
 	return ret;
 }
 
-void syscall_inject(struct syscall_interception *trap) {
-	if (trap->syscall_id == SYS_getuid) {
-		printf("changing getuid return value\n");
-		trap->regs->rax = 42;
-		trap->set_regs = true;
-	}
-}
-
-int main() {
-	int  status   = 0;
+int run(int argc, char **argv) {
+	int status = 0;
 
 	int pid = fork();
 
 	if (!pid) {
+		PRINT_DEBUG("exec %s\n", argv[0]);
+
 		ptrace(PTRACE_TRACEME, 0, 0, 0);
-		int target_status = execlp(TARGET, TARGET, 0);
+		int target_status = execvp(argv[0], argv);
 		if (target_status == -1) {
-			printf("target exec fail'd!");
+			PRINT_DEBUG("target exec fail'd!");
 		}
 	}
 	else {
@@ -223,25 +161,40 @@ int main() {
 		struct user_regs_struct regs;
 		int syscall_id;
 
+		//TODO: port argument
+		init_connection(8998);
+
 		while (true) {
 			//wait for syscall trap
 			ptrace(PTRACE_SYSCALL, pid, 0, 0);
 			wait(&status);
 
 			if (WIFEXITED(status)) {
+				PRINT_INFO("Child exit with status %d\n", WEXITSTATUS(status));
+				break;
+			}
+			if (WIFSIGNALED(status)) {
+				PRINT_INFO("Child exit due to signal %d\n", WTERMSIG(status));
+				break;
+			}
+			if (!WIFSTOPPED(status)) {
+				PRINT_INFO("wait() returned unhandled status 0x%x\n", status);
 				break;
 			}
 
+			//child stop signal: WSTOPSIG(status): SIGTRAP
+
 			ptrace(PTRACE_GETREGS, pid, 0, &regs);
 			syscall_id = regs.orig_rax;
-			struct syscall_interception trap{pid, syscall_id, &regs};
+			struct syscall_mod trap{pid, syscall_id, &regs};
 
 			what_do = redirect_decision(&trap);
 
 			if (what_do.redirect) {
-				//replace syscall id with getuid:
+				//replace syscall id with some syscall that does no i/o etc:
 				regs.orig_rax = HARMLESS_SYSCALL;
 				ptrace(PTRACE_SETREGS, pid, 0, &regs);
+				regs.orig_rax = syscall_id;
 			}
 
 			//let the syscall run, wait for syscall exit:
@@ -249,14 +202,105 @@ int main() {
 			ptrace(PTRACE_SYSCALL, pid, 0, 0);
 			wait(&status);
 
-			if (what_do.inject) {
+			if (what_do.redirect) {
 				syscall_inject(&trap);
 				if (trap.set_regs) {
-					ptrace(PTRACE_SETREGS, pid, 0, &regs);
+					ptrace(PTRACE_SETREGS, pid, 0, trap.regs);
 				}
 			}
 		}
+
+		terminate_connection();
 	}
 
 	return 0;
+}
+
+
+int parse_args(int argc, char **argv, int *call_argc, char **&call_argv) {
+	int ret = 0;
+	int c;
+	int digit_optind = 0;
+
+	while (1) {
+		int this_option_optind = optind ? optind : 1;
+		int option_index = 0;
+		static struct option long_options[] = {
+			{"help",    no_argument,       0,  'h' },
+			{0,         0,                 0,  0 }
+		};
+
+		c = getopt_long(argc, argv, "h", long_options, &option_index);
+		if (c == -1)
+			break;
+
+		switch (c) {
+		case 0:
+			printf("option %s", long_options[option_index].name);
+			if (optarg) {
+				printf(" = %s", optarg);
+			}
+			printf("\n");
+			break;
+
+		case 'h':
+			printf("you might find some help here someday.\n");
+			ret = 1;
+			break;
+
+		case '?':
+			break;
+
+		default:
+			printf("?? getopt returned character code 0%o ??\n", c);
+		}
+	}
+
+	if (optind < argc) {
+		printf("will run: ");
+		*call_argc = argc - optind;
+
+		//where the arg ptrs will be stored
+		call_argv = (char **)malloc(sizeof(char *) * (*call_argc + 1));
+
+		for (int i = 0; optind < argc; optind++, i++) {
+			//store arg ptrs
+			call_argv[i] = argv[optind];
+			printf("%s ", argv[optind]);
+		}
+		printf("\n");
+
+		call_argv[*call_argc] = NULL;
+	} else {
+		printf("usage: %s [options] <program> <arg 0> <arg n>\n", argv[0]);
+		ret = 2;
+	}
+
+	return ret;
+}
+
+
+int main(int argc, char **argv) {
+	int ret = 0;
+
+	char **call_argv = nullptr;
+	int call_argc;
+
+	if (0 == parse_args(argc, argv, &call_argc, call_argv)) {
+		try {
+			run(call_argc, call_argv);
+		} catch (util::Error e) {
+			printf("ERROR: %s\n", e.str());
+			ret = 1;
+		}
+	}
+	else {
+		ret = 1;
+	}
+
+	if (call_argv != nullptr) {
+		free(call_argv);
+	}
+
+	return ret;
 }

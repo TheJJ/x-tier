@@ -1,10 +1,10 @@
 
-CXXFLAGS = -g -O1 -std=c++11 -Wall -Werror -Wpedantic -fPIC
+CXXFLAGS = -g -O0 -std=c++11 -fPIC
 
 XTIER_DIR       = ../x-tier
 LIBINJECT_DIR   = ../libinject
 
-INCLUDEDIRS = -I$(XTIER_DIR)
+INCLUDEDIRS = -I$(XTIER_DIR) -I$(LIBINJECT_DIR)
 LINKLIBS =
 LINKINJECT = -L$(LIBINJECT_DIR) -linject -Wl,-rpath $(LIBINJECT_DIR)
 
@@ -13,13 +13,16 @@ LINKINJECT = -L$(LIBINJECT_DIR) -linject -Wl,-rpath $(LIBINJECT_DIR)
 all: lolredirect target-test
 
 target-test: target.o
-	$(CXX) $(CXXFLAGS) $(LDFLAGS) $^ $(LINKINJECT) -o $@
+	$(CXX) $(CXXFLAGS) $(LDFLAGS) $^ -o $@
 
-lolredirect: lolredirect.o $(LIBINJECT_DIR)/libinject.so
-	$(CXX) $(CXXFLAGS) $(LDFLAGS) $< $(LINKLIBS) -o $@
+lolredirect: lolredirect.o util.o syscall_handler.o syscall_utils.o
+	$(CXX) $(CXXFLAGS) $(LDFLAGS) $^ $(LINKINJECT) -o $@
 
 %.o: %.cpp
 	$(CXX) $(CXXFLAGS) $(INCLUDEDIRS) -o $@ -c $<
+
+run: lolredirect
+	./$<
 
 clean:
 	rm -f *.o *.so lolredirect
