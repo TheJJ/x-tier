@@ -16,7 +16,7 @@ wrapper_path = x-tier/wrapper/linux64/
 #pass sysmap filename as parameter pls
 SYSMAP = /pass/me/pls
 
-all: emulator kernel arrshell libinject
+all: emulator kernel arrshell libinject lolredirect
 
 kernel:
 	make -j $(corecount) -C $(kernel)/ modules SUBDIRS=arch/x86/kvm/
@@ -30,13 +30,16 @@ arrshell:
 libinject:
 	make -C libinject
 
+lolredirect:
+	make -C lolredirect
+
 configure:
 	(cd $(emulator)/ && CFLAGS=$(CFLAGS) ./configure --python=$(shell which python3) --target-list=x86_64-softmmu --enable-kvm)
 
 run: kernel emulator
 	./run
 
-.PHONY: configure run arrshell libinject
+.PHONY: configure run arrshell libinject lolredirect
 
 
 tmp:
