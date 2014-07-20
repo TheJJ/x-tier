@@ -46,6 +46,24 @@
 KNOB<int> KnobMonitorPort(KNOB_MODE_WRITEONCE, "pintool", "monitorPort", "0",
                           "the port the monitor is running on");
 
+
+/**
+ * remembers the state of a opened file.
+ *
+ * each further call with the same file state then emulates
+ * the "being open" by opening the fd again, and seeking.
+ */
+struct file_state {
+	int fd;                //!< File pointer that we use for this file
+	std::string path;      //!< Path to the file
+	int flags;             //!< Flags that were used to open the file
+	int mode;              //!< Mode that was used to open the file
+	int close_on_exec;     //!< automatically close this file when exec* is run
+	unsigned int position; //!< Current position in the file in case of multiple reads
+	unsigned int getdents; //!< Specifies if getdents is currently in progress
+};
+
+
 // +---------------------
 // |     GLOBALS
 // +---------------------
