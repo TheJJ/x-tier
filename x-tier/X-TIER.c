@@ -327,6 +327,8 @@ struct injection *new_injection(const char *module_name)
 		return result;
 	}
 
+	memset(result, 0, sizeof(struct injection));
+
 	// Name
 	injection_set_module_name(result, module_name);
 
@@ -438,7 +440,9 @@ struct injection *injection_from_fd(int fd)
 
 static struct injection_arg *new_injection_arg(void)
 {
-	struct injection_arg *result = (struct injection_arg *)MALLOC(sizeof(struct injection_arg));
+	size_t memsize = sizeof(struct injection_arg);
+	struct injection_arg *result = (struct injection_arg *)MALLOC(memsize);
+	memset((char *)result, 0, memsize);
 
 	if (!result)
 	{
@@ -699,6 +703,8 @@ struct injection *consolidate(struct injection *injection)
 	char *consolidated_data = NULL;
 	struct injection *result = NULL;
 
+	size_t blob_size = injection_size(injection);
+
 	// Is this structure already consolidated?
 	if (injection->type & (CONSOLIDATED)) {
 		PRINT_WARNING("Injection structure already consolidated! Aborting!\n");
@@ -708,8 +714,6 @@ struct injection *consolidate(struct injection *injection)
 	if (injection->code_len <= 0) {
 		PRINT_WARNING("Injection code length is <= 0\n");
 	}
-
-	size_t blob_size = injection_size(injection);
 
 	// Allocate memory for the whole injection blob
 	// this includes metadata, module name, code and arguments

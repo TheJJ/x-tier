@@ -118,8 +118,7 @@ struct injection_arg
  */
 struct injection
 {
-    // Internal structures. Only modify them if you know what you are doing.
-    enum injection_type type;    ///< The type of the injection structure see above
+    enum injection_type type;    ///< The type of the injection structure
     char *module_path;           ///< The complete path to the module to be injected
     unsigned int path_len;       ///< The length of the path in bytes including '\0'
 
