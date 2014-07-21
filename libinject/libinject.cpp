@@ -28,6 +28,7 @@ int  monitor_socket      = 0;
 int  injection_output_fd = 0;
 int  injection_input_fd  = 0;
 bool created_output_pipe = false;
+bool created_input_pipe = false;
 
 // time measurement vars
 QTime timer;
@@ -38,7 +39,7 @@ long  totalCommunicationTime = 0;
 long  totalReceiveTime       = 0;
 long  injectionCount         = 0;
 
-bool create_injection_output_pipe(void) {
+bool create_injection_data_pipes(void) {
 	int ret = 0;
 
 	// Create named pipe - User Read, Write, Exec
@@ -49,10 +50,20 @@ bool create_injection_output_pipe(void) {
 			return false;
 		}
 		PRINT_DEBUG_FULL("Created output fifo...\n");
+	}
+	created_output_pipe = true;
+
+	if (!created_input_pipe && (ret = mkfifo(injection_input_pipe_filename, S_IRWXU)) != 0) {
+		if (errno != EEXIST) {
+			PRINT_ERROR("Could not create named pipe '%s' (ret: %d, errno: %d)!\n",
+			            injection_output_pipe_filename, ret, errno);
+			return false;
+		}
+		PRINT_DEBUG_FULL("Created input fifo...\n");
 
 	}
+	created_input_pipe = true;
 
-	created_output_pipe = true;
 	return true;
 }
 
@@ -254,8 +265,8 @@ bool inject_module(struct injection *injection, struct received_data *data) {
 	}
 
 	// Create output pipe if necessary
-	if (!create_injection_output_pipe()) {
-		PRINT_ERROR("Could not create output pipe!\n");
+	if (!create_injection_data_pipes()) {
+		PRINT_ERROR("Could not create data pipes!\n");
 		return false;
 	}
 
@@ -268,16 +279,13 @@ bool inject_module(struct injection *injection, struct received_data *data) {
 	// Open input pipe
 	PRINT_DEBUG_FULL("Opening Input Pipe...\n");
 
-	//TODO: race condition! wait for qemu to create the file!
-	//struct timespec input_pipe_delay {0, 100000000}; //0.1 s
-	//nanosleep(&input_pipe_delay, NULL);
-
+	//TODO: race condition! wait for qemu to create the file! e.g. use a socket for metadata!
 	if (!injection_input_fd) {
-		injection_input_fd = open(XTIER_EXTERNAL_COMMAND_PIPE, O_WRONLY);
+		injection_input_fd = open(injection_input_pipe_filename, O_WRONLY);
 	}
 
 	if (injection_input_fd < 0) {
-		PRINT_ERROR("Could not open fd to cmd input named pipe '%s'!\n", XTIER_EXTERNAL_COMMAND_PIPE);
+		PRINT_ERROR("Could not open fd to cmd input named pipe '%s'!\n", injection_input_pipe_filename);
 		return false;
 	}
 
@@ -345,8 +353,7 @@ bool inject_module(struct injection *injection, struct received_data *data) {
 	// Time Measurement of the injection itself
 	totalInjectionTime += (timer.elapsed() - tmpInjectionTime);
 
-	//TODO: race condition again...
-	//nanosleep(&input_pipe_delay, NULL);
+	//race condition here...
 
 	// exit x-tier mode and resume vm
 	send_monitor_command("cont\n");
