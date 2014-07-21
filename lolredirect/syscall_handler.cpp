@@ -144,9 +144,7 @@ bool on_read(struct syscall_mod *trap) {
 	PRINT_DEBUG("read fd %d to 0x%lx and with size %d\n", fd, (long)buf, buf_size);
 
 	struct received_data recv_data;
-
 	struct injection *injection = NULL;
-	struct file_state *fs;
 
 	// take the corresponding file_state from our stored file state dict
 	auto search = files.find(fd);
@@ -156,10 +154,9 @@ bool on_read(struct syscall_mod *trap) {
 		return true;
 	}
 
-	fs = &search->second;
+	struct file_state *fs = &files[fd];
 
 	injection = new_injection("/tmp/read.inject");
-
 	injection_load_code(injection);
 
 	add_string_argument(injection, fs->path.c_str());
@@ -215,29 +212,22 @@ bool on_close(struct syscall_mod *trap) {
  * getdents: syscall 78
  */
 bool on_getdents(struct syscall_mod *trap) {
-	int fd = (int)trap->get_arg(0);
-
-	char dirp[max_path_len];
-	int n = util::tstrncpy(trap, dirp, (const char *)trap->get_arg(1), max_path_len);
-	if (n < 0) {
-		PRINT_ERROR("failed copying path string\n");
-		return false;
-	}
-
-	int count = (int)trap->get_arg(2);
+	int                  fd    = (int)trap->get_arg(0);
+	struct linux_dirent *dirp  = (struct linux_dirent *)trap->get_arg(1);
+	int                  count = (int)trap->get_arg(2);
 
 	struct received_data recv_data;
-
 	struct injection *injection = NULL;
-	struct file_state *fs;
+	int n = 0;
 
-	if (files.find(fd) == files.end()) {
+	auto search = files.find(fd);
+	if (search == files.end()) {
 		PRINT_ERROR("File Descriptor %d unkown!\n", fd);
 		trap->set_return(-EBADF);
 		return true;
 	}
 
-	fs = &files[fd];
+	struct file_state *fs = &files[fd];
 
 	// We only inject on the first getdents call
 	if (!fs->getdents) {
@@ -251,20 +241,29 @@ bool on_getdents(struct syscall_mod *trap) {
 
 		free_injection(injection);
 
-		if (count > recv_data.length) {
-			// Dirp is larger than the data we received
-			memcpy(dirp, recv_data.data, recv_data.length);
+		if (recv_data.length < count) {
+			// the passed buffer dirp is larger than the data we received
+			n = util::tmemcpy(trap, (char *)dirp, recv_data.data, recv_data.length, true);
+			if (n < 0) {
+				throw util::Error("failed storing getdents data to redirected process");
+			}
+
 			fs->getdents = recv_data.length;
 			trap->set_return(recv_data.return_value);
 		}
 		else {
-			PRINT_WARNING("Data returned is larger than the size of the buffer!\n");
-			memcpy(dirp, recv_data.data, count);
+			PRINT_WARNING("Data returned is larger than the size of the buffer! Next getdents call will do nothing! (TODO)\n");
+			n = util::tmemcpy(trap, (char *)dirp, recv_data.data, count, true);
+			if (n < 0) {
+				throw util::Error("failed storing getdents data to redirected process");
+			}
 			fs->getdents = count;
 			trap->set_return(count);
 		}
 	}
 	else {
+		//TODO: handle subsequent getdents calls
+		// 0 = end of directory
 		trap->set_return(0);
 		fs->getdents = 0;
 	}
@@ -333,16 +332,19 @@ bool on_stat(struct syscall_mod *trap, bool do_fdlookup) {
 		throw util::Error("failed storing stat result!");
 	}
 
-	struct stat test;
-	n = util::tmemcpy(trap, (char *)&test, stat_result_ptr, sizeof(struct stat), false);
-	if (n < 0) {
-		throw util::Error("failed copying back stat result!");
-	}
+	if (false) {
+		//this verifies the stat data written to the child
+		struct stat test;
+		n = util::tmemcpy(trap, (char *)&test, stat_result_ptr, sizeof(struct stat), false);
+		if (n < 0) {
+			throw util::Error("failed copying back stat result!");
+		}
 
-	PRINT_DEBUG("VERIFY file '%s' size: %zu\n", stat_path, test.st_size);
+		PRINT_DEBUG("VERIFY file '%s' size: %zu\n", stat_path, test.st_size);
 
-	if (received_stat->st_size != test.st_size) {
-		throw util::Error("failed size verification");
+		if (received_stat->st_size != test.st_size) {
+			throw util::Error("failed size verification");
+		}
 	}
 
 
