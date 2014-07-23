@@ -6,6 +6,7 @@
 #include <unordered_map>
 
 #include "syscall_handler.h"
+#include "state_tracker.h"
 #include "x-inject.h"
 
 unsigned int next_free_fd = FILE_DESCRIPTOR_OFFSET;
@@ -63,6 +64,14 @@ void syscall_inject(struct syscall_mod *trap) {
 
 	case SYS_fadvise64: //ignore file access pattern hint
 		trap->set_return(0);
+		break;
+
+	case SYS_chdir:
+		success = on_chdir(trap, false);
+		break;
+
+	case SYS_fchdir:
+		success = on_chdir(trap, true);
 		break;
 	}
 }
@@ -433,5 +442,41 @@ bool on_fcntl(struct syscall_mod *trap) {
 	}
 
 	trap->set_return(syscall_return_val);
+	return true;
+}
+
+/**
+ * chdir: syscall 80, fchdir: syscall 81
+ *
+ * change working dirs of current process
+ */
+bool on_chdir(struct syscall_mod *trap, bool do_fdlookup) {
+	const char *new_work_dir;
+
+	if (not do_fdlookup) {
+		char path_buf[max_path_len];
+		int n = util::tstrncpy(trap, path_buf, (const char *)trap->get_arg(0), max_path_len);
+
+		if (n < 0) {
+			throw util::Error("failed copying chdir string!\n");
+		}
+
+		new_work_dir = path_buf;
+	}
+	else {
+		int fd = (int)trap->get_arg(0);
+
+		auto search = files.find(fd);
+		if (search == files.end()) {
+			trap->set_return(-EBADF);
+			return true;
+		}
+		new_work_dir = search->second.path.c_str();
+		PRINT_DEBUG("Looked up: fd %d => '%s'\n", fd, new_work_dir);
+	}
+
+	PRINT_INFO("chdir to '%s' requested, NOT IMPLEMENTED!\n", new_work_dir);
+
+	trap->set_return(0);
 	return true;
 }

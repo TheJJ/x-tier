@@ -15,7 +15,7 @@ all: lolredirect target-test
 target-test: target.o
 	$(CXX) $(CXXFLAGS) $(LDFLAGS) $^ -o $@
 
-lolredirect: lolredirect.o util.o syscall_handler.o syscall_utils.o
+lolredirect: lolredirect.o util.o syscall_handler.o syscall_utils.o state_tracker.o
 	$(CXX) $(CXXFLAGS) $(LDFLAGS) $^ $(LINKINJECT) -o $@
 
 %.o: %.cpp
