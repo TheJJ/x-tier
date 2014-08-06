@@ -10,16 +10,84 @@
 #include <sys/user.h>
 #include <sys/wait.h>
 
-#include "syscall_handler.h"
 #include "syscall_utils.h"
-#include "state_tracker.h"
 
 #include "x-inject.h"
 
 #define HARMLESS_SYSCALL SYS_getuid
 
+syscall_mod::syscall_mod(int pid, int syscall_id, struct user_regs_struct *regs, process_state *pstate)
+	:
+	pid(pid),
+	syscall_id(syscall_id),
+	set_regs(false),
+	regs(regs),
+	pstate(pstate)
+{}
 
-int run(int argc, char **argv) {
+uint64_t *syscall_mod::get_arg_ptr(int arg_id) {
+	unsigned long long int *ret;
+	switch (arg_id) {
+	case 0:
+		ret = &this->regs->rdi;
+		break;
+	case 1:
+		ret = &this->regs->rsi;
+		break;
+	case 2:
+		ret = &this->regs->rdx;
+		break;
+	case 3:
+		ret = &this->regs->rcx;
+		break;
+	case 4:
+		ret = &this->regs->r8;
+		break;
+	case 5:
+		ret = &this->regs->r9;
+		break;
+	case 6:
+		ret = &this->regs->r10;
+		break;
+	default:
+		throw util::Error("unknown argument %d queried!", arg_id);
+	}
+
+	return (uint64_t *)ret;
+}
+
+uint64_t syscall_mod::get_arg(int arg_id) {
+	return *this->get_arg_ptr(arg_id);
+}
+
+void syscall_mod::set_arg(int arg_id, uint64_t val) {
+	*this->get_arg_ptr(arg_id) = val;
+	this->set_regs = true;
+}
+
+void syscall_mod::set_return(uint64_t val) {
+	this->regs->rax = val;
+	this->set_regs = true;
+}
+
+void syscall_mod::print_registers() {
+	printf(
+		"syscall %03d:\n"
+		"\targ0: 0x%016lx\n"
+		"\targ1: 0x%016lx\n"
+		"\targ2: 0x%016lx\n"
+		"\targ3: 0x%016lx\n"
+		"\targ4: 0x%016lx\n"
+		"\targ5: 0x%016lx\n"
+		"\targ6: 0x%016lx\n",
+		this->syscall_id, this->get_arg(0),
+		this->get_arg(1), this->get_arg(2),
+		this->get_arg(3), this->get_arg(4),
+		this->get_arg(4), this->get_arg(5));
+}
+
+
+int run(int argc, char **argv, std::string cwd) {
 	int status = 0;
 
 	int pid = fork();
@@ -28,10 +96,9 @@ int run(int argc, char **argv) {
 		PRINT_DEBUG("exec %s\n", argv[0]);
 
 		ptrace(PTRACE_TRACEME, 0, 0, 0);
-		int target_status = execvp(argv[0], argv);
-		if (target_status == -1) {
-			PRINT_DEBUG("target exec fail'd!");
-		}
+		execvp(argv[0], argv);
+		PRINT_DEBUG("target exec fail'd!");
+		return 1;
 	}
 	else {
 		wait(&status);
@@ -39,6 +106,8 @@ int run(int argc, char **argv) {
 		struct decision what_do;
 		struct user_regs_struct regs;
 		int syscall_id;
+
+		struct process_state pstate{cwd, argc, argv};
 
 		//TODO: port argument
 		init_connection(8998);
@@ -65,9 +134,9 @@ int run(int argc, char **argv) {
 
 			ptrace(PTRACE_GETREGS, pid, 0, &regs);
 			syscall_id = regs.orig_rax;
-			struct syscall_mod trap{pid, syscall_id, &regs};
+			struct syscall_mod trap{pid, syscall_id, &regs, &pstate};
 
-			what_do = redirect_decision(&trap);
+			what_do = pstate.redirect_decision(&trap);
 
 			if (what_do.redirect) {
 				//replace syscall id with some syscall that does no i/o etc:
@@ -76,17 +145,19 @@ int run(int argc, char **argv) {
 				regs.orig_rax = syscall_id;
 			}
 
-			//let the syscall run, wait for syscall exit:
+			//let the syscall run, wait for syscall exit.
 			//TODO: patch kernel to allow syscall skip
 			ptrace(PTRACE_SYSCALL, pid, 0, 0);
 			wait(&status);
 
 			if (what_do.redirect) {
-				syscall_inject(&trap);
+				syscall_redirect(&trap);
 				if (trap.set_regs) {
 					ptrace(PTRACE_SETREGS, pid, 0, trap.regs);
 				}
 			}
+
+			pstate.syscall_id_previous = syscall_id;
 		}
 
 		terminate_connection();
@@ -96,17 +167,17 @@ int run(int argc, char **argv) {
 }
 
 
-int parse_args(int argc, char **argv, int *call_argc, char **&call_argv) {
+int parse_args(int argc, char **argv, int *call_argc, char **&call_argv, std::string *cwd) {
 	int ret = 0;
 	int c;
-	int digit_optind = 0;
 
 	while (1) {
-		int this_option_optind = optind ? optind : 1;
 		int option_index = 0;
 		static struct option long_options[] = {
-			{"help",    no_argument,       0,  'h' },
-			{0,         0,                 0,  0 }
+			{"help",        no_argument,    0,  'h' },
+			{"cwd",   required_argument,    0,  'c' },
+			{"port",  required_argument,    0,  'p' },
+			{0,                       0,    0,   0 }
 		};
 
 		c = getopt_long(argc, argv, "h", long_options, &option_index);
@@ -125,6 +196,15 @@ int parse_args(int argc, char **argv, int *call_argc, char **&call_argv) {
 		case 'h':
 			printf("you might find some help here someday.\n");
 			ret = 1;
+			break;
+
+		case 'c':
+			//initial working directory
+			*cwd = optarg;
+			break;
+
+		case 'p':
+			printf("port argument not implemented yet!\n");
 			break;
 
 		case '?':
@@ -151,23 +231,23 @@ int parse_args(int argc, char **argv, int *call_argc, char **&call_argv) {
 
 		call_argv[*call_argc] = NULL;
 	} else {
-		printf("usage: %s [options] <program> <arg 0> <arg n...>\n", argv[0]);
+		printf("usage: %s [options] -- <program> <arg 0> <arg n...>\n", argv[0]);
 		ret = 2;
 	}
 
 	return ret;
 }
 
-
 int main(int argc, char **argv) {
 	int ret = 0;
 
 	char **call_argv = nullptr;
 	int call_argc;
+	std::string cwd = "/";
 
-	if (0 == parse_args(argc, argv, &call_argc, call_argv)) {
+	if (0 == parse_args(argc, argv, &call_argc, call_argv, &cwd)) {
 		try {
-			run(call_argc, call_argv);
+			run(call_argc, call_argv, cwd);
 		} catch (util::Error e) {
 			printf("ERROR: %s\n", e.str());
 			ret = 1;

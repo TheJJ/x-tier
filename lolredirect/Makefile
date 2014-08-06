@@ -1,5 +1,5 @@
 
-CXXFLAGS = -g -O0 -std=c++11 -fPIC
+CXXFLAGS = -g -O0 -std=c++11 -Wall -Werror -fPIC
 
 XTIER_DIR       = ../x-tier
 LIBINJECT_DIR   = ../libinject
@@ -15,7 +15,7 @@ all: lolredirect target-test
 target-test: target.o
 	$(CXX) $(CXXFLAGS) $(LDFLAGS) $^ -o $@
 
-lolredirect: lolredirect.o util.o syscall_handler.o syscall_utils.o state_tracker.o
+lolredirect: lolredirect.o util.o syscall_redirector.o syscall_utils.o state_tracker.o
 	$(CXX) $(CXXFLAGS) $(LDFLAGS) $^ $(LINKINJECT) -o $@
 
 %.o: %.cpp

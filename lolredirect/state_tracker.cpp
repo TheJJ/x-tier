@@ -5,6 +5,7 @@
 #include <cstring>
 
 #include "syscall_utils.h"
+#include "util.h"
 #include "x-inject.h"
 
 
@@ -24,7 +25,39 @@ constexpr bool print_syscalls = false;
  */
 
 
-struct decision redirect_decision(struct syscall_mod *trap) {
+brk_state::brk_state(struct process_state *pstate)
+	:
+	pstate(pstate),
+	last_brk_arg(-1)
+{}
+
+brk_state::~brk_state() {}
+
+void brk_state::new_brk(int prev_syscall_id, ssize_t arg) {
+	if (prev_syscall_id == SYS_brk) {
+		if (arg != 0 && this->last_brk_arg == 0) {
+			PRINT_DEBUG("program's init section is over now.\n");
+			this->pstate->state = execution_section::MAIN_RUN;
+		}
+	}
+
+	this->last_brk_arg = arg;
+}
+
+process_state::process_state(std::string cwd, int argc, char **argv)
+	:
+	cwd(cwd),
+	argc(argc),
+	argv(argv),
+	state(execution_section::INIT),
+	next_free_fd(FILE_DESCRIPTOR_OFFSET),
+	syscall_id_previous(-1),
+	brk_handler(this)
+{}
+
+process_state::~process_state() {}
+
+struct decision process_state::redirect_decision(struct syscall_mod *trap) {
 	if (print_syscalls) {
 		trap->print_registers();
 	}
@@ -38,19 +71,16 @@ struct decision redirect_decision(struct syscall_mod *trap) {
 
 	//disable redirection by default
 	struct decision ret{false};
-	bool do_path_fd_test = true;
+	bool possibly_redirect = true;
 
 	//gather information about the trapped syscall
 	switch (trap->syscall_id) {
 	case SYS_open:
 	case SYS_stat:
-	case SYS_lstat:
 	case SYS_chdir:
 		n = util::tstrncpy(trap, path, (char *)trap->get_arg(0), max_path_len);
 		break;
-	case SYS_openat:
-		n = util::tstrncpy(trap, path, (char *)trap->get_arg(1), max_path_len);
-		break;
+
 	case SYS_write:
 	case SYS_read:
 	case SYS_close:
@@ -60,13 +90,38 @@ struct decision redirect_decision(struct syscall_mod *trap) {
 	case SYS_fadvise64:
 	case SYS_getdents:
 	case SYS_fchdir:
+	case SYS_openat:
 		fd = trap->get_arg(0);
 		break;
+
+	case SYS_brk:
+		this->brk_handler.new_brk(this->syscall_id_previous, trap->get_arg(0));
+		possibly_redirect = false;
+		break;
+
+		//unimplemented syscalls:
+	case SYS_lstat:
+	case SYS_uname:
+	case SYS_ioctl:
+		possibly_redirect = false;
+
+		//syscalls to redirect no matter what:
+	case SYS_getcwd:
+	case SYS_getuid:
+	case SYS_getgid:
+	case SYS_getegid:
+	case SYS_getresgid:
+	case SYS_getresuid:
+		ret.redirect = true;
 	default:
-		do_path_fd_test = false;
+		possibly_redirect = false;
 	}
 
-	if (ret.redirect == false && do_path_fd_test) {
+	if (this->state != execution_section::MAIN_RUN) {
+		possibly_redirect = false;
+	}
+
+	if (possibly_redirect && ret.redirect == false) {
 		if (n > 0) {
 			const char *prefixes[] = {
 				"/usr/lib/",
@@ -83,16 +138,33 @@ struct decision redirect_decision(struct syscall_mod *trap) {
 				"locale",
 			};
 
-			bool host_path = false;
+			bool host_path  = false;
+			bool guest_path = false;
 
-			for (auto &prefix : prefixes) {
-				if (0 == util::strpcmp(path, prefix)) {
-					host_path = true;
-					break;
+			//whitelist program invokation arguments
+			if (not host_path and not guest_path) {
+				for (int i = 1; i < this->argc; i++) {
+					const char *arg = this->argv[i];
+
+					if (0 == strcmp(arg, path)) {
+						guest_path = true;
+						break;
+					}
 				}
 			}
 
-			if (not host_path) {
+			//compare for path prefixes
+			if (not host_path and not guest_path) {
+				for (auto &prefix : prefixes) {
+					if (0 == util::strpcmp(path, prefix)) {
+						host_path = true;
+						break;
+					}
+				}
+			}
+
+			//compare for any substring
+			if (not host_path and not guest_path) {
 				for (auto &substr : substrings) {
 					if (NULL != strstr(path, substr)) {
 						host_path = true;
@@ -124,14 +196,14 @@ struct decision redirect_decision(struct syscall_mod *trap) {
 		}
 	} else {
 		ret.redirect = false;
-		ret.reason = redirect_reason::NOTNEEDED;
+		ret.reason   = redirect_reason::NOTNEEDED;
 	}
 
 	if (ret.redirect) {
 		PRINT_DEBUG("\t`-> redirect syscall %d\n", trap->syscall_id);
 	}
 	else {
-		PRINT_DEBUG("\t`-> syscall %d regular on host!\n", trap->syscall_id);
+		PRINT_DEBUG("\t`-> syscall %d regular on host\n", trap->syscall_id);
 	}
 
 	return ret;

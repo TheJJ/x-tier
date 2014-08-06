@@ -2,8 +2,33 @@
 #define _STATE_TRACKER_H_
 
 #include <string>
+#include <unordered_map>
 
 #include "lolredirect.h"
+#include "syscall_redirector.h"
+
+//fd id of files opened in the guest
+#define FILE_DESCRIPTOR_OFFSET 1000
+
+enum class execution_section {
+	INIT,
+	MAIN_RUN,
+};
+
+enum class redirect_reason {
+	PATH,
+	FD,
+	NOTNEEDED,
+	INITSECTION,
+};
+
+struct decision {
+	decision() : redirect(false) {};
+	decision(bool def) : redirect(def) {};
+	bool redirect;
+	redirect_reason reason;
+};
+
 
 struct file_state {
 	int fd;            // emulated file descriptor id
@@ -15,13 +40,32 @@ struct file_state {
 	bool getdents;     // getdents is currently in progress
 };
 
-struct process_state {
-	std::string cwd;
+struct brk_state {
+	brk_state(struct process_state *pstate);
+	~brk_state();
+
+	struct process_state *pstate;
+	ssize_t last_brk_arg;
+
+	void new_brk(int prev_syscall_id, ssize_t arg);
 };
 
-#define FILE_DESCRIPTOR_OFFSET 42
-extern unsigned int next_free_fd;
+struct process_state {
+	process_state(std::string cwd, int argc, char **argv);
+	~process_state();
 
-struct decision redirect_decision(struct syscall_mod *trap);
+	std::string cwd;
+	int argc;
+	char **argv;
+	execution_section state;
+	unsigned int next_free_fd;
+	std::unordered_map<int, struct file_state> files;
+
+	int syscall_id_previous;
+	struct brk_state brk_handler;
+
+	struct decision redirect_decision(struct syscall_mod *trap);
+};
+
 
 #endif //_STATE_TRACKER_H_

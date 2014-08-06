@@ -3,17 +3,14 @@
 #include <fcntl.h>
 #include <sys/syscall.h>
 #include <unistd.h>
-#include <unordered_map>
 
-#include "syscall_handler.h"
+#include "syscall_redirector.h"
 #include "state_tracker.h"
+#include "util.h"
 #include "x-inject.h"
 
-unsigned int next_free_fd = FILE_DESCRIPTOR_OFFSET;
-std::unordered_map<int, struct file_state> files;
 
-
-void syscall_inject(struct syscall_mod *trap) {
+bool syscall_redirect(struct syscall_mod *trap) {
 	bool success = true;
 
 	switch (trap->syscall_id) {
@@ -28,7 +25,7 @@ void syscall_inject(struct syscall_mod *trap) {
 		success = on_open(trap, false);
 		break;
 
-	case SYS_openat: //TODO: actually do openat..
+	case SYS_openat:
 		success = on_open(trap, true);
 		break;
 
@@ -74,6 +71,8 @@ void syscall_inject(struct syscall_mod *trap) {
 		success = on_chdir(trap, true);
 		break;
 	}
+
+	return success;
 }
 
 
@@ -85,7 +84,6 @@ bool on_open(struct syscall_mod *trap, bool openat) {
 	int base_arg_id = 0;
 
 	if (openat) {
-		//TODO: actually handle openat
 		base_arg_id += 1;
 	}
 
@@ -97,6 +95,25 @@ bool on_open(struct syscall_mod *trap, bool openat) {
 	if (n < 0) {
 		PRINT_ERROR("failed copying path string\n");
 		return false;
+	}
+
+	if (openat) {
+		if (not util::is_abspath(path)) {
+			int fd = (int)trap->get_arg(0);
+
+			auto search = trap->pstate->files.find(fd);
+			if (search == trap->pstate->files.end()) {
+				trap->set_return(-EBADF);
+				return true;
+			}
+
+			std::string path_s = util::abspath(search->second.path, path);
+			strncpy(path, path_s.c_str(), max_path_len);
+		}
+	}
+	else if (not util::is_abspath(path)) {
+		std::string path_s = util::abspath(trap->pstate->cwd, path);
+		strncpy(path, path_s.c_str(), max_path_len);
 	}
 
 	//TODO: library that creates inject files
@@ -120,7 +137,7 @@ bool on_open(struct syscall_mod *trap, bool openat) {
 		PRINT_DEBUG("open successful: '%s'\n", path);
 
 		struct file_state fd;
-		fd.fd = (int)next_free_fd;
+		fd.fd = (int)trap->pstate->next_free_fd;
 		fd.path = path;
 		fd.flags = flags;
 		fd.mode = mode;
@@ -128,11 +145,11 @@ bool on_open(struct syscall_mod *trap, bool openat) {
 		fd.close_on_exec = 0;
 		fd.getdents = false;
 
-		files[next_free_fd] = fd;
+		trap->pstate->files[fd.fd] = fd;
 
-		trap->set_return(next_free_fd);
-		PRINT_DEBUG("virtual fd = '%d'\n", next_free_fd);
-		next_free_fd += 1;
+		trap->set_return(fd.fd);
+		PRINT_DEBUG("virtual fd = '%d'\n", fd.fd);
+		trap->pstate->next_free_fd += 1;
 	}
 	else {
 		PRINT_DEBUG("Could not open file '%s'\n", path);
@@ -156,14 +173,14 @@ bool on_read(struct syscall_mod *trap) {
 	struct injection *injection = NULL;
 
 	// take the corresponding file_state from our stored file state dict
-	auto search = files.find(fd);
-	if (search == files.end()) {
+	auto search = trap->pstate->files.find(fd);
+	if (search == trap->pstate->files.end()) {
 		PRINT_ERROR("File Descriptor %d unkown!\n", fd);
 		trap->set_return(-EBADF);
 		return true;
 	}
 
-	struct file_state *fs = &files[fd];
+	struct file_state *fs = &trap->pstate->files[fd];
 
 	injection = new_injection("/tmp/read.inject");
 	injection_load_code(injection);
@@ -187,6 +204,11 @@ bool on_read(struct syscall_mod *trap) {
 	else if (recv_data.return_value >= 0) {
 		int n = util::tmemcpy(trap, buf, recv_data.data, recv_data.return_value, true);
 
+		if (n < 0) {
+			free_injection(injection);
+			throw util::Error("failed storing read data to child process!");
+		}
+
 		fs->pos += recv_data.return_value;
 		trap->set_return(recv_data.return_value);
 	}
@@ -202,10 +224,9 @@ bool on_read(struct syscall_mod *trap) {
  */
 bool on_close(struct syscall_mod *trap) {
 	int fd = (int)trap->get_arg(0);
-	int ret = 0;
 
-	if (files.find(fd) != files.end()) {
-		files.erase(fd);
+	if (trap->pstate->files.find(fd) != trap->pstate->files.end()) {
+		trap->pstate->files.erase(fd);
 		trap->set_return(0);
 		return true;
 	}
@@ -229,14 +250,14 @@ bool on_getdents(struct syscall_mod *trap) {
 	struct injection *injection = NULL;
 	int n = 0;
 
-	auto search = files.find(fd);
-	if (search == files.end()) {
+	auto search = trap->pstate->files.find(fd);
+	if (search == trap->pstate->files.end()) {
 		PRINT_ERROR("File Descriptor %d unkown!\n", fd);
 		trap->set_return(-EBADF);
 		return true;
 	}
 
-	struct file_state *fs = &files[fd];
+	struct file_state *fs = &trap->pstate->files[fd];
 
 	// We only inject on the first getdents call
 	if (!fs->getdents) {
@@ -293,12 +314,21 @@ bool on_stat(struct syscall_mod *trap, bool do_fdlookup) {
 
 	const char *stat_path = NULL;
 
+	int n;
+
 	if (not do_fdlookup) {
 		char stat_path_buf[max_path_len];
-		int n = util::tstrncpy(trap, stat_path_buf, (const char *)trap->get_arg(0), max_path_len);
+		n = util::tstrncpy(trap, stat_path_buf, (const char *)trap->get_arg(0), max_path_len);
 
 		if (n < 0) {
 			throw util::Error("failed copying path string!\n");
+		}
+
+		PRINT_DEBUG("requested to stat filename '%s'\n", stat_path_buf);
+
+		if (not util::is_abspath(stat_path_buf)) {
+			std::string path_s = util::abspath(trap->pstate->cwd, stat_path_buf);
+			strncpy(stat_path_buf, path_s.c_str(), max_path_len);
 		}
 
 		stat_path = stat_path_buf;
@@ -306,8 +336,8 @@ bool on_stat(struct syscall_mod *trap, bool do_fdlookup) {
 	else {
 		int stat_fd = (int)trap->get_arg(0);
 
-		auto search = files.find(stat_fd);
-		if (search == files.end()) {
+		auto search = trap->pstate->files.find(stat_fd);
+		if (search == trap->pstate->files.end()) {
 			trap->set_return(-EBADF);
 			return true;
 		}
@@ -316,7 +346,6 @@ bool on_stat(struct syscall_mod *trap, bool do_fdlookup) {
 	}
 
 	add_string_argument(injection, stat_path);
-
 	injection = consolidate(injection);
 
 	PRINT_DEBUG("Trying to stat file '%s' -> %p...\n", stat_path, stat_result_ptr);
@@ -328,36 +357,26 @@ bool on_stat(struct syscall_mod *trap, bool do_fdlookup) {
 		size_t file_size = received_stat->st_size;
 		PRINT_DEBUG("file '%s' size: %zu\n", stat_path, file_size);
 	}
+	else if (recv_data.return_value < 0) {
+		goto out;
+	}
 
 	if (recv_data.length != sizeof(struct stat)) {
+		free_injection(injection);
 		throw util::Error("recieved wrong struct stat size!");
 	}
 
 	PRINT_DEBUG("recv_data %p\n", &recv_data);
 
 	// store stat data to other process
-	int n = util::tmemcpy(trap, stat_result_ptr, recv_data.data, sizeof(struct stat), true);
+	n = util::tmemcpy(trap, stat_result_ptr, recv_data.data, sizeof(struct stat), true);
 	if (n < 0) {
+		free_injection(injection);
 		throw util::Error("failed storing stat result!");
 	}
 
-	if (false) {
-		//this verifies the stat data written to the child
-		struct stat test;
-		n = util::tmemcpy(trap, (char *)&test, stat_result_ptr, sizeof(struct stat), false);
-		if (n < 0) {
-			throw util::Error("failed copying back stat result!");
-		}
-
-		PRINT_DEBUG("VERIFY file '%s' size: %zu\n", stat_path, test.st_size);
-
-		if (received_stat->st_size != test.st_size) {
-			throw util::Error("failed size verification");
-		}
-	}
-
-
-	//0 on success
+	//0 on success, < 0 on fail
+out:
 	trap->set_return(recv_data.return_value);
 	free_injection(injection);
 
@@ -374,13 +393,13 @@ bool on_lseek(struct syscall_mod *trap) {
 
 	struct file_state *fs;
 
-	if (files.find(fd) == files.end()) {
+	if (trap->pstate->files.find(fd) == trap->pstate->files.end()) {
 		PRINT_ERROR("File Descriptor %d unkown!\n", fd);
 		trap->set_return(-EBADF);
 		return true;
 	}
 
-	fs = &files[fd];
+	fs = &trap->pstate->files[fd];
 
 	switch (whence) {
 	case SEEK_SET:
@@ -400,7 +419,7 @@ bool on_fcntl(struct syscall_mod *trap) {
 	int fd        = (int)trap->get_arg(0);
 	int operation = (int)trap->get_arg(1);
 
-	if (files.find(fd) == files.end()) {
+	if (trap->pstate->files.find(fd) == trap->pstate->files.end()) {
 		PRINT_ERROR("File Descriptor %d unkown!\n", fd);
 		trap->set_return(-EBADF);
 		return true;
@@ -415,25 +434,25 @@ bool on_fcntl(struct syscall_mod *trap) {
 		PRINT_DEBUG("duplicating fd %d\n", fd);
 		//create fd copy.
 
-		files[next_free_fd] = files[fd];
-		trap->set_return(next_free_fd);
-		next_free_fd++;
+		trap->pstate->files[trap->pstate->next_free_fd] = trap->pstate->files[fd];
+		trap->set_return(trap->pstate->next_free_fd);
+		trap->pstate->next_free_fd += 1;
 		break;
 
 	case F_GETFL:
 		PRINT_DEBUG("getting open flags for fd %d\n", fd);
-		syscall_return_val = files[fd].flags;
+		syscall_return_val = trap->pstate->files[fd].flags;
 		break;
 
 	case F_GETFD:
 		PRINT_DEBUG("getting fd flags (close_on_exec) for fd %d\n", fd);
-		syscall_return_val = files[fd].close_on_exec;
+		syscall_return_val = trap->pstate->files[fd].close_on_exec;
 		break;
 
 	case F_SETFD: {
 		int new_coe = (int)trap->get_arg(2);
 		PRINT_DEBUG("setting fd flags (close_on_exec) for fd %d to %d\n", fd, new_coe);
-		files[fd].close_on_exec = new_coe;
+		trap->pstate->files[fd].close_on_exec = new_coe;
 		break;
 	}
 	default:
@@ -448,12 +467,24 @@ bool on_fcntl(struct syscall_mod *trap) {
 /**
  * chdir: syscall 80, fchdir: syscall 81
  *
- * change working dirs of current process
+ * change working dir of current process
  */
 bool on_chdir(struct syscall_mod *trap, bool do_fdlookup) {
-	const char *new_work_dir;
+	std::string new_work_dir;
 
-	if (not do_fdlookup) {
+	if (do_fdlookup) {
+		int fd = (int)trap->get_arg(0);
+		PRINT_DEBUG("chdir to fd %d\n", fd);
+
+		auto search = trap->pstate->files.find(fd);
+		if (search == trap->pstate->files.end()) {
+			trap->set_return(-EBADF);
+			return true;
+		}
+		new_work_dir = search->second.path;
+		PRINT_DEBUG("Looked up: fd %d => '%s'\n", fd, new_work_dir.c_str());
+	}
+	else {
 		char path_buf[max_path_len];
 		int n = util::tstrncpy(trap, path_buf, (const char *)trap->get_arg(0), max_path_len);
 
@@ -461,22 +492,38 @@ bool on_chdir(struct syscall_mod *trap, bool do_fdlookup) {
 			throw util::Error("failed copying chdir string!\n");
 		}
 
+		PRINT_DEBUG("chdir to '%s'\n", path_buf);
 		new_work_dir = path_buf;
 	}
-	else {
-		int fd = (int)trap->get_arg(0);
 
-		auto search = files.find(fd);
-		if (search == files.end()) {
-			trap->set_return(-EBADF);
-			return true;
-		}
-		new_work_dir = search->second.path.c_str();
-		PRINT_DEBUG("Looked up: fd %d => '%s'\n", fd, new_work_dir);
-	}
-
-	PRINT_INFO("chdir to '%s' requested, NOT IMPLEMENTED!\n", new_work_dir);
+	trap->pstate->cwd = util::abspath(trap->pstate->cwd, new_work_dir);
 
 	trap->set_return(0);
+	return true;
+}
+
+/**
+ * chdir: syscall 79
+ *
+ * return working dir of current process
+ */
+bool on_getcwd(struct syscall_mod *trap) {
+	char   *cwd_result_ptr = (char *)trap->get_arg(0);
+	size_t  max_buf_len    = (size_t)trap->get_arg(1);
+
+	size_t cwd_full_len = trap->pstate->cwd.length() + 1; // \0 included
+
+	if (cwd_full_len > max_buf_len) {
+		trap->set_return(-ERANGE);
+		return true;
+	}
+
+	int n = util::tmemcpy(trap, cwd_result_ptr, trap->pstate->cwd.c_str(), cwd_full_len, true);
+
+	if (n < 0) {
+		throw util::Error("failed copying cwd result string!\n");
+	}
+
+	trap->set_return((uint64_t)cwd_result_ptr);
 	return true;
 }
