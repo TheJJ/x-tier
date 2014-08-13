@@ -159,29 +159,20 @@ struct XTIER_state
  */
 struct XTIER_performance
 {
-	// The time it took to inject the module in ns
-	u64 total_module_load_time;
+	u64 total_module_load_time;         // the time it took to inject the module in ns
 	// The time that it took the module to execute in ns
 	// Notice that this time includes all VMExits as well as the time
 	// it took to temporary remove/resume the module in case of external
-	// function calls.
+	// function calls:
 	u64 total_module_exec_time;
-	// The time it took to remove the module in ns
-	u64 total_module_unload_time;
-	// The time it took to temporarily remove the module in ns
-	u64 total_module_temp_removal_time;
-	// The time it took to resume a temporarily removed module in ns
-	u64 total_module_temp_resume_time;
-	// Time spent during external (userspace handled) Hypercalls
-	u64 total_module_hypercall_time;
-	// The number of times the module was injected
-	u32 injections;
-	// The number of times the modules was temporarily removed
+	u64 total_module_unload_time;       // the time it took to remove the module in ns
+	u64 total_module_temp_removal_time; // the time it took to temporarily remove the module in ns
+	u64 total_module_temp_resume_time;  // the time it took to resume a temporarily removed module in ns
+	u64 total_module_hypercall_time;    // time spent during external (userspace handled) hypercalls
+	u32 injections;                     // the number of times the module was injected
 	u32 temp_removals;
-	// Hypercalls
 	u32 hypercalls;
-	// Return Value of the injection
-	u64 return_value;
+	int64_t return_value;               // injection return value
 };
 
 /**
