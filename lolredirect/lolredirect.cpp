@@ -208,6 +208,7 @@ int parse_args(int argc, char **argv, int *call_argc, char **&call_argv, std::st
 			break;
 
 		case '?':
+			return 1;
 			break;
 
 		default:
