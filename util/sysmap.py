@@ -28,7 +28,7 @@ p = argparse.ArgumentParser(description="converts nm-formatted system maps to c 
 p.add_argument("input_filename")
 p.add_argument("output_filename")
 p.add_argument("-c", "--create-funcs", default=False, action="store_true")
-p.add_argument("-s", "--create-strings", default=False, action="store_true")
+p.add_argument("-t", "--append-ul", default=False, action="store_true")
 
 args = p.parse_args()
 
@@ -39,7 +39,14 @@ allentries = set()
 print("starting conversion of system map")
 with open(args.input_filename, "r") as infile:
     with open(args.output_filename, "w") as outfile:
-        outfile.write("#ifndef _SYSMAP_H_\n#define _SYSMAP_H_\n\n")
+        outfile.write("""#ifndef _SYSMAP_H_
+#define _SYSMAP_H_
+
+#define SYMADDR_STR(s) _SYSMAP_MACROSTR(s)
+#define _SYSMAP_MACROSTR(x) #x
+
+
+""")
 
         for line in infile:
             match = pat.match(line)
@@ -55,17 +62,17 @@ with open(args.input_filename, "r") as infile:
                     continue
 
                 output = "#define %s%s" % (prefix, cname)
-                addr_ul = "0x%sUL" % address
+
+                if args.append_ul:
+                    addr_ul = "0x%sUL" % address
+                else:
+                    addr_ul = "0x%s" % address
 
                 if args.create_funcs and stype == "t":
                     #create function
                     output += " ((void (*)())%s)\n" % (addr_ul)
                 else:
                     output += " %s\n" % (addr_ul)
-
-
-                if args.create_strings:
-                    output += "#define %s%s%s \"0x%s\"\n" % (string_prefix, prefix, cname, address)
 
                 outfile.write(output)
 
