@@ -20,7 +20,7 @@
 #define msg_print(level, level_string, fmt, ...) \
 	do {\
 		if (DEBUG_LEVEL >= level) {\
-			printf("[ libinject - %s ] %04d : %s(): " fmt, level_string, __LINE__, __func__, ##__VA_ARGS__);\
+			fprintf(stderr, "[ libinject - %s ] %04d : %s(): " fmt, level_string, __LINE__, __func__, ##__VA_ARGS__); \
 		}\
 	} while (0)\
 
