@@ -83,7 +83,7 @@ long sys_stat(char *path, STAT *stat)
 
 	// CALL is executed
 	__asm__ volatile(
-		"mov $" str_lnx_sys_stat ", %%rbx;" // Target Address in RBX
+		"mov $" SYMADDR_STR(lnx_sys_stat) ", %%rbx;" // Target Address in RBX
 		                               // Set ARGs
 		"mov %2, %%rdi;"               // ARG 1
 		"mov %3, %%rsi;"               // ARG 2

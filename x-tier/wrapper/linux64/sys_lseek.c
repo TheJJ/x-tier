@@ -48,7 +48,7 @@ long sys_lseek(unsigned int fd, long offset, int whence)
 
 	// CALL is executed
 	__asm__ volatile(
-		"mov $" str_lnx_sys_lseek ", %%rbx;" // Target Address in RBX
+		"mov $" SYMADDR_STR(lnx_sys_lseek) ", %%rbx;" // Target Address in RBX
 		// set call arguments
 		"mov $0x0, %%rdi;"             // Clear RDI, since we only write to edi
 		"mov %2, %%edi;"               // ARG 1

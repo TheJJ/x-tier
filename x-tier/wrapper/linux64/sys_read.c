@@ -57,7 +57,7 @@ long sys_read(unsigned int fd, char *buf, long buf_size) {
 
 	// CALL is executed
 	__asm__ volatile(
-		"mov $" str_lnx_sys_read ", %%rbx;" // Target Address in RBX
+		"mov $" SYMADDR_STR(lnx_sys_read) ", %%rbx;" // Target Address in RBX
 		// Set ARGs
 		"mov $0x0, %%rdi;"              // Clear RDI, since we only write to edi
 		"mov %2, %%edi;"                // ARG 1

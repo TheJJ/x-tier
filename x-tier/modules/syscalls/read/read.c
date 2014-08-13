@@ -19,43 +19,51 @@ int read(char *path, int flags, int offset, int bytes)
 	int result = 0;
 
 	int fd = sys_open(path, flags, 0);
+	printk("read: open %s = %d\n", path, fd);
 
-	// Could not open file
-	if (fd < 0)
+	// could not open file
+	if (fd < 0) {
 		return -1;
-
-	// Seek
-	if (offset > 0) {
-		if ((result = sys_lseek(fd, offset, SEEK_SET)) < 0)
-			return result;
 	}
 
-	// Read data
-	while((read = sys_read(fd, buf, BUF_SIZE)) > 0 &&
-	      total_read < bytes)
-	{
+	// seek to requested data beginning
+	if (offset > 0) {
+		printk("seeking to offset %d\n", offset);
+		if ((result = sys_lseek(fd, offset, SEEK_SET)) < 0) {
+			return result;
+		}
+	}
 
-		printk("reading...\n");
+	// start reading data
+	do {
+		printk("calling sys_read(fd=%d, buf=%p, bufsize=%d):\n", fd, buf, BUF_SIZE);
 
-		// Save total read bytes for return value
+		//call kernel's read function
+		read = sys_read(fd, buf, BUF_SIZE);
+
+		// save total read bytes for return value
 		total_read += read;
 
-		// Send to hypervisor
+		// send to hypervisor
+		printk("sending data buffer (ret=%d)...\n", read);
 		data_transfer(buf, read);
 
 		// Check if there is no more data
-		if (read < BUF_SIZE)
+		if (read < BUF_SIZE) {
 			break;
-	}
+		}
+	} while (read > 0 && total_read < bytes);
 
-	// Close
+	// close fd on guest kernel
 	sys_close(fd);
 
-	// Total data read
-	if (read < 0)
+	// total data read
+	if (read < 0) {
 		return read;
-	else
+	}
+	else {
 		return total_read;
+	}
 }
 
 static int __init read_init(void)

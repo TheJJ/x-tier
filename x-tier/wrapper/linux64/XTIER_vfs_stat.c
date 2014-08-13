@@ -14,9 +14,9 @@
 #define COMMAND_INTERRUPT "$42"
 
 // Data will be patched by the shellcode
-// Place this variables into text to get a fixed offset
+// Place these variables into text to get a fixed offset
 unsigned long kernel_esp     __attribute__ ((section (".text"))) = 0xdeadbeefbeefdead;
-unsigned long target_address __attribute__ ((section (".text"))) = 0xaaaadeadbeefbbbb;
+unsigned long target_address __attribute__ ((section (".text"))) = 0xbeefb00b5aaabbbb;
 
 /*
  * 64-bit Calling Conventions
@@ -35,7 +35,7 @@ unsigned long target_address __attribute__ ((section (".text"))) = 0xaaaadeadbee
  * vfs_stat - Get information about a file
  * @path: The path to the file.
  * @stat: Stat structure that will contain the results.
- * @stat_size: The siue of the stat struct
+ * @stat_size: The size of the stat struct
  *
  * Notice: This is a "more" platform independent version of stat, since
  * it uses the kstat struct instead of the stat struct. Latter may be either
@@ -74,6 +74,7 @@ long XTIER_vfs_stat(char *path, char *stat, int stat_size)
 	// Reserve space for the path and the stat buffer
 	esp_offset += path_len;
 	esp_offset += stat_size;
+
 	// Change pointer to new values
 	new_path = (char *)(kernel_esp - path_len);
 	new_stat = kernel_esp - esp_offset;
@@ -85,7 +86,7 @@ long XTIER_vfs_stat(char *path, char *stat, int stat_size)
 
 	// CALL is executed
 	__asm__ volatile(
-		"mov $" str_lnx_vfs_stat ", %%rbx;" // Target Address in RBX
+		"mov $" SYMADDR_STR(lnx_vfs_stat) ", %%rbx;" // Target Address in RBX
 		                               // Set ARGs
 		"mov %2, %%rdi;"               // ARG 1
 		"mov %3, %%rsi;"               // ARG 2

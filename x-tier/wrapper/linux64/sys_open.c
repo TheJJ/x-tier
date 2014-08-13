@@ -51,7 +51,7 @@ long sys_open(const char *filename, int flags, unsigned short mode) {
 
 	// COPY arguments
 	char *new_filename = 0;
-	char *tmp = filename;
+	char *tmp = (char *)filename;
 	int i = 0;
 
 	// Length of the filename?
@@ -76,7 +76,7 @@ long sys_open(const char *filename, int flags, unsigned short mode) {
 
 	// CALL is executed
 	__asm__ volatile(
-		"mov $" str_lnx_sys_open ", %%rbx;"               // Target Address in RBX
+		"mov $" SYMADDR_STR(lnx_sys_open) ", %%rbx;"               // Target Address in RBX
 
 		// Set ARGs
 		"mov %2,   %%rdi;"             // ARG 1

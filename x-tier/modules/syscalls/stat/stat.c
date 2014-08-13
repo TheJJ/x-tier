@@ -25,13 +25,13 @@ int stat(char *path)
 
 	result = XTIER_vfs_stat(path, (char *)&k, sizeof(struct kstat));
 
-	printk("xtier vfs stat finished on %s\n", path);
+	printk("xtier vfs stat executed on %s\n", path);
 
 	if (result != 0) {
 		return result;
 	} else {
-		// Convert data to new stat
-		printk("UID %d\n", k.uid);
+		// Convert kstat struct to stat struct
+		printk("UID %d\n", k.uid.val);
 		result = cp_new_stat(&k, &s, sizeof(struct kstat));
 		printk("new UID %d\n", s.st_uid);
 		printk("transfering back the stat struct...\n");

@@ -72,7 +72,7 @@ long cp_new_stat(char *kstat, char *stat, int kstat_size)
 
 	// CALL is executed
 	__asm__ volatile(
-		"mov $" str_lnx_cp_new_stat ", %%rbx;" // Target Address in RBX
+		"mov $" SYMADDR_STR(lnx_cp_new_stat) ", %%rbx;" // Target Address in RBX
 		                               // Set ARGs
 		"mov %2, %%rdi;"               // ARG 1
 		"mov %3, %%rsi;"               // ARG 2
