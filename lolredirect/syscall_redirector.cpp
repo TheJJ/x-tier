@@ -14,7 +14,8 @@ bool syscall_redirect(struct syscall_mod *trap) {
 	bool success = true;
 
 	switch (trap->syscall_id) {
-	case SYS_getuid: //TODO
+	case SYS_getuid:
+		trap->set_return(0);
 		break;
 
 	case SYS_getdents:
@@ -34,11 +35,15 @@ bool syscall_redirect(struct syscall_mod *trap) {
 		break;
 
 	case SYS_stat:
-		success = on_stat(trap, false);
+		success = on_stat(trap, false, false);
 		break;
 
 	case SYS_fstat:
-		success = on_stat(trap, true);
+		success = on_stat(trap, true, false);
+		break;
+
+	case SYS_newfstatat:
+		success = on_stat(trap, true, true);
 		break;
 
 	case SYS_lstat: //TODO, link stat
@@ -59,7 +64,8 @@ bool syscall_redirect(struct syscall_mod *trap) {
 		success = on_fcntl(trap);
 		break;
 
-	case SYS_fadvise64: //ignore file access pattern hint
+	case SYS_fadvise64:
+		// ignore file access pattern hint:
 		trap->set_return(0);
 		break;
 
@@ -101,13 +107,20 @@ bool on_open(struct syscall_mod *trap, bool openat) {
 		if (not util::is_abspath(path)) {
 			int fd = (int)trap->get_arg(0);
 
-			auto search = trap->pstate->files.find(fd);
-			if (search == trap->pstate->files.end()) {
-				trap->set_return(-EBADF);
-				return true;
+			std::string basepath;
+			if (fd == AT_FDCWD) {
+				PRINT_DEBUG("openat CWD\n");
+				basepath = trap->pstate->cwd;
+			} else {
+				auto search = trap->pstate->files.find(fd);
+				if (search == trap->pstate->files.end()) {
+					trap->set_return(-EBADF);
+					return true;
+				}
+				basepath = search->second.path;
 			}
 
-			std::string path_s = util::abspath(search->second.path, path);
+			std::string path_s = util::abspath(basepath, path);
 			strncpy(path, path_s.c_str(), max_path_len);
 		}
 	}
@@ -305,19 +318,78 @@ bool on_getdents(struct syscall_mod *trap) {
 /**
  * stat: syscall 4, fstat: syscall 5
  */
-bool on_stat(struct syscall_mod *trap, bool do_fdlookup) {
-	char *stat_result_ptr = (char *)trap->get_arg(1);
+bool on_stat(struct syscall_mod *trap, bool do_fdlookup, bool do_at) {
+	char *stat_result_ptr;
 
 	struct received_data recv_data;
 	struct injection *injection = new_injection("/tmp/stat.inject");
 	injection_load_code(injection);
 
 	const char *stat_path = NULL;
+	char stat_path_buf[max_path_len];
+	char statat_path_buf[max_path_len];
 
 	int n;
 
-	if (not do_fdlookup) {
-		char stat_path_buf[max_path_len];
+	if (do_fdlookup) {
+		int stat_fd = (int)trap->get_arg(0);
+
+		bool base_fdcwd = false;
+
+		// newfstatat requested
+		// -> fd is basepath, unless it's AT_FDCWD
+		if (do_at) {
+			if (stat_fd == AT_FDCWD) {
+				PRINT_DEBUG("AT_CWD requested!\n");
+				base_fdcwd = true;
+			}
+		}
+
+		// look up the fd filename. it could be the prefix when do_at
+		if (not base_fdcwd) {
+			auto search = trap->pstate->files.find(stat_fd);
+			if (search == trap->pstate->files.end()) {
+				trap->set_return(-EBADF);
+				return true;
+			}
+			stat_path = search->second.path.c_str();
+			PRINT_DEBUG("Looked up: fd %d => '%s'\n", stat_fd, stat_path);
+		}
+
+		// the fd is actually just a prefix. arg 1 has the real filename.
+		if (do_at) {
+			// as arg0 is the fd, arg1 the filename -> arg2 resultptr
+			stat_result_ptr = (char *)trap->get_arg(2);
+			n = util::tstrncpy(trap, statat_path_buf, (const char *)trap->get_arg(1), max_path_len);
+
+			if (n < 0) {
+				throw util::Error("failed copying statat path string!\n");
+			}
+
+			// prefix impossible with relative path
+			if (util::is_abspath(statat_path_buf)) {
+				stat_path = statat_path_buf;
+			}
+			else {
+				std::string path_s;
+				if (base_fdcwd) {
+					// prefix the cwd
+					path_s = util::abspath(trap->pstate->cwd, statat_path_buf);
+				}
+				else {
+					// prefix the fd as basedir
+					path_s = util::abspath(stat_path, statat_path_buf);
+				}
+				strncpy(stat_path_buf, path_s.c_str(), max_path_len);
+				stat_path = stat_path_buf;
+			}
+		} else {
+			stat_result_ptr = (char *)trap->get_arg(1);
+		}
+	}
+	else {
+		stat_result_ptr = (char *)trap->get_arg(1);
+
 		n = util::tstrncpy(trap, stat_path_buf, (const char *)trap->get_arg(0), max_path_len);
 
 		if (n < 0) {
@@ -332,17 +404,6 @@ bool on_stat(struct syscall_mod *trap, bool do_fdlookup) {
 		}
 
 		stat_path = stat_path_buf;
-	}
-	else {
-		int stat_fd = (int)trap->get_arg(0);
-
-		auto search = trap->pstate->files.find(stat_fd);
-		if (search == trap->pstate->files.end()) {
-			trap->set_return(-EBADF);
-			return true;
-		}
-		stat_path = search->second.path.c_str();
-		PRINT_DEBUG("Looked up: fd %d => '%s'\n", stat_fd, stat_path);
 	}
 
 	add_string_argument(injection, stat_path);

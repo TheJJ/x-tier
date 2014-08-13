@@ -1,5 +1,6 @@
 #include "state_tracker.h"
 
+#include <linux/fcntl.h>
 #include <sys/reg.h>
 #include <sys/syscall.h>
 #include <cstring>
@@ -52,7 +53,10 @@ process_state::process_state(std::string cwd, int argc, char **argv)
 	state(execution_section::INIT),
 	next_free_fd(FILE_DESCRIPTOR_OFFSET),
 	syscall_id_previous(-1),
-	brk_handler(this)
+	brk_handler(this),
+	host_syscall_count(0),
+	redirect_syscall_count(0),
+	syscall_count(0)
 {}
 
 process_state::~process_state() {}
@@ -68,6 +72,8 @@ struct decision process_state::redirect_decision(struct syscall_mod *trap) {
 
 	int fd = -1;
 	int n  = 0;
+
+	bool at_syscall = false;
 
 	//disable redirection by default
 	struct decision ret{false};
@@ -90,7 +96,12 @@ struct decision process_state::redirect_decision(struct syscall_mod *trap) {
 	case SYS_fadvise64:
 	case SYS_getdents:
 	case SYS_fchdir:
+		fd = trap->get_arg(0);
+		break;
+
 	case SYS_openat:
+	case SYS_newfstatat:
+		at_syscall = true;
 		fd = trap->get_arg(0);
 		break;
 
@@ -194,16 +205,27 @@ struct decision process_state::redirect_decision(struct syscall_mod *trap) {
 			}
 			ret.reason = redirect_reason::FD;
 		}
+		else if (at_syscall && fd == AT_FDCWD) {
+			// special value that indicates we should open relative to cwd
+			ret.redirect = true;
+			ret.reason = redirect_reason::FD;
+		};
 	} else {
 		ret.redirect = false;
 		ret.reason   = redirect_reason::NOTNEEDED;
 	}
 
+	trap->pstate->syscall_count += 1;
+
 	if (ret.redirect) {
+		trap->pstate->redirect_syscall_count += 1;
 		PRINT_DEBUG("\t`-> redirect syscall %d\n", trap->syscall_id);
 	}
-	else {
+	else if (trap->syscall_id >= 0) {
+		trap->pstate->host_syscall_count += 1;
 		PRINT_DEBUG("\t`-> syscall %d regular on host\n", trap->syscall_id);
+	} else {
+		throw util::Error("syscall negative: %d! wtf?!\n", trap->syscall_id);
 	}
 
 	return ret;

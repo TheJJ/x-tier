@@ -160,6 +160,11 @@ int run(int argc, char **argv, std::string cwd) {
 			pstate.syscall_id_previous = syscall_id;
 		}
 
+		PRINT_DEBUG("execution finished!\n");
+		PRINT_DEBUG("syscall count:   %d\n", pstate.syscall_count);
+		PRINT_DEBUG("host syscalls:   %d\n", pstate.host_syscall_count);
+		PRINT_DEBUG("injection count: %d\n", pstate.redirect_syscall_count);
+
 		terminate_connection();
 	}
 

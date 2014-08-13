@@ -64,6 +64,10 @@ struct process_state {
 	int syscall_id_previous;
 	struct brk_state brk_handler;
 
+	int host_syscall_count;
+	int redirect_syscall_count;
+	int syscall_count;
+
 	struct decision redirect_decision(struct syscall_mod *trap);
 };
 
