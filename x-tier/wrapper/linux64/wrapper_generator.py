@@ -5,6 +5,7 @@
 
 
 import argparse
+import re
 from string import Template
 
 hypercall_id      = 42
@@ -85,14 +86,13 @@ class CharArrayArgument(FuncArgument):
         return Template("""
 	// === ${arg_repr}
 ${stackcpy}
-	// ====
 """).substitute(arg_repr=repr(self), stackcpy=self.copy_to_stack(self.name, self.length))
 
     def get_func_arg(self):
         return "const char *%s" % self.name
 
     def __repr__(self):
-        return "argument: char %s[%d]" % (self.name, self.length)
+        return "argument: char %s[%s]" % (self.name, self.length)
 
 
 class StringArgument(CharArrayArgument):
@@ -257,20 +257,25 @@ def create_args(args):
         if all([w in atype for w in ("char", "*")]):
             # char ptr arg
 
-            if False:
-                # length is known
-                # TODO: pass known length
-                ret.append(CharArrayArgument(aname, 1337))
+            length_known = re.search(r"<(\w+)>", atype)
+            if length_known:
+                # length is known, stored in variable
+                ret.append(CharArrayArgument(aname, length_known.group(1)))
             else:
                 # \0 terminated.
                 ret.append(StringArgument(aname))
         else:
-            ret.append(NumberArgument(aname))
+            array = re.search(r"\[(\d+)\]", atype)
+            if array:
+                ret.append(CharArrayArgument(aname, array.group(1)))
+            else:
+                # regular number argument
+                ret.append(NumberArgument(aname))
 
     return ret
 
 def main(args):
-    wrapper_args = create_args(parse_func_args(args.arguments))
+    wrapper_args = create_args(parse_func_args(args.argument))
     w = Wrapper(args.function_name, args.jump_name, wrapper_args)
     print(w.get_code())
 
@@ -279,7 +284,7 @@ if __name__ == "__main__":
     p = argparse.ArgumentParser(description='x-tier wrapper generator. generates stealty external function calling wrappers.')
     p.add_argument("function_name", help="generated function name")
     p.add_argument("jump_name", help="external function name to be called")
-    p.add_argument("arguments", nargs="*", help="arguments for the external function call")
+    p.add_argument("argument", nargs="*", help="arguments for the external function call. add [len] or <lenvar> to type to define buffer sizes.")
 
     args = p.parse_args()
     main(args)
