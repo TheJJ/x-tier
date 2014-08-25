@@ -619,7 +619,9 @@ static void consolidated_update_pointers(struct injection *injection)
 	}
 
 	// the argument data, should be right after the code
-	injection->argv = get_first_injection_arg(injection);
+	if (injection->argc > 0) {
+		injection->argv = get_first_injection_arg(injection);
+	}
 
 	consolidated_update_arg_pointers(injection);
 }
