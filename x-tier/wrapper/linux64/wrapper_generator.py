@@ -39,12 +39,12 @@ class FuncArgument:
 
         ret = list()
         #TODO: maybe the register needs to be null'd when writing less than 8 bytes!
-        ret.append('"mov %%%d, %%%%%s"  // arg %d' % (param_id, arg_reg[arg_id], arg_id))
+        ret.append('"mov %%%d, %%%%%s;"  // arg %d' % (param_id, arg_reg[arg_id], arg_id))
 
         return ret
 
     def mod_espoffset(self, size):
-        return "\tesp_offset += %s;" % size
+        return "esp_offset += %s;" % size
 
     def memcpy(self, dest, src, size):
         return Template(
@@ -52,6 +52,8 @@ class FuncArgument:
 		${dest}[i] = ${src}[i];
 	}""").substitute(dest=dest, src=src, size=size)
 
+    def stackbuffer(self, name, length):
+        return "char *%s_stack_buffer = (char *)(((char *)kernel_esp) - (esp_offset + %s));" % (name, length)
 
     def prepare_arg(self):
         raise NotImplementedError("implement in subclass")
@@ -95,12 +97,11 @@ class CharArrayArgument(FuncArgument):
 
     def copy_to_stack(self, name, length):
         return Template("""
-	char *${name}_stack_buffer = (char *)(((char *)kernel_esp) - (esp_offset + ${length}));
+	${stackbuffer}
 	${memcpy}
 """).substitute(
-    name   = name,
-    length = length,
-    memcpy = self.memcpy(self.get_asm_arg(), name, length),
+    stackbuffer = self.stackbuffer(name, length),
+    memcpy      = self.memcpy(self.get_asm_arg(), name, length),
 )
 
     def prepare_arg(self):
@@ -114,8 +115,16 @@ ${esp_mod}
     esp_mod  = self.mod_espoffset(self.length),
     stackcpy = self.copy_to_stack(self.name, self.length),
 )
+
         elif self.inout == "out":
-            return self.mod_espoffset(self.length) + " // reserve space for " + self.name
+            return Template("""
+	${stackbuffer}
+	${esp_mod} // reserve space for ${name}
+            """).substitute(
+                stackbuffer = self.stackbuffer(self.name, self.length),
+                esp_mod     = self.mod_espoffset(self.length),
+                name        = self.name,
+            )
 
     def copy_back_arg(self):
         if self.inout == "in":
@@ -130,13 +139,10 @@ ${esp_mod}
 )
 
     def get_func_arg(self):
-        return "const char *%s" % self.name
+        return "char *%s" % self.name
 
     def get_asm_arg(self):
-        if self.inout == "out":
-            return self.name
-        elif self.inout == "in":
-            return "%s_stack_buffer" % self.name
+        return "%s_stack_buffer" % self.name
 
     def __repr__(self):
         return "argument: char %s[%s]" % (self.name, self.length)
@@ -231,7 +237,7 @@ ${args_prepare}
 		"mov  %%rbp, %%rsp;"   // restore RSP
 		"pop  %%rbp;"          // restore RBP
 
-		"mov  %%rax, %5;"      // save return value
+		"mov  %%rax, %${retarg_id};"      // save return value
 		:
 		:
 		"r"(kernel_esp),
@@ -277,7 +283,7 @@ ${args_copyback}
 
         function_args  = ", ".join(function_args)
         prepare_args   = "".join(prepare_args)
-        reg_args       = "".join(['"m"(%s), ' % a for a in reg_args])
+        reg_args       = " ".join(['"m"(%s),' % a for a in reg_args])
         clobbered_regs = ", ".join(['"%s"'    % a for a in clobbered_regs])
         to_regs        = "\n\t\t".join(to_regs)
         args_copyback  = "".join(copy_back_args)
@@ -296,6 +302,7 @@ ${args_copyback}
             argument_regs           = reg_args,
             argument_regs_clobbered = clobbered_regs,
             args_copyback           = args_copyback,
+            retarg_id               = param_id,
         )
 
         return c
@@ -339,7 +346,7 @@ def create_args(args):
         else:
             inout = ""
 
-        length_var = re.search(r"\[([\w\(\)]+|\d+)\]", atype)
+        length_var = re.search(r"\[([\w\(\) ]+|\d+)\]", atype)
 
         if all([w in atype for w in ("char", "*")]):
             # char ptr arg
