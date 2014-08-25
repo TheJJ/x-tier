@@ -139,7 +139,6 @@ struct decision process_state::redirect_decision(struct syscall_mod *trap) {
 		break;
 
 		//unimplemented syscalls:
-	case SYS_uname:
 	case SYS_ioctl:
 		possibly_redirect = false;
 		break;
@@ -151,6 +150,7 @@ struct decision process_state::redirect_decision(struct syscall_mod *trap) {
 	case SYS_getegid:
 	case SYS_getresgid:
 	case SYS_getresuid:
+	case SYS_uname:
 		ret.reason   = redirect_reason::FORCED;
 		ret.redirect = true;
 		break;
