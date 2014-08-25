@@ -139,7 +139,24 @@ struct decision process_state::redirect_decision(struct syscall_mod *trap) {
 		break;
 
 		//unimplemented syscalls:
+	case SYS_clock_getres:
+	case SYS_clock_gettime:
+	case SYS_faccessat:
+	case SYS_fchmodat:
+	case SYS_fchownat:
+	case SYS_futimesat:
+	case SYS_getxattr:
 	case SYS_ioctl:
+	case SYS_lgetxattr:
+	case SYS_linkat:
+	case SYS_mkdirat:
+	case SYS_mknodat:
+	case SYS_readlink:
+	case SYS_readlinkat:
+	case SYS_renameat:
+	case SYS_symlinkat:
+	case SYS_unlink:
+	case SYS_unlinkat:
 		possibly_redirect = false;
 		break;
 

@@ -11,7 +11,7 @@
 #include "x-inject.h"
 
 
-bool syscall_redirect(struct syscall_mod *trap) {
+bool syscall_redirect(syscall_mod *trap) {
 	bool success = true;
 
 	switch (trap->syscall_id) {
@@ -44,19 +44,19 @@ bool syscall_redirect(struct syscall_mod *trap) {
 		break;
 
 	case SYS_stat:
-		success = on_stat(trap, false, false);
+		success = on_stat(trap, false, false, false);
 		break;
 
 	case SYS_fstat:
-		success = on_stat(trap, true, false);
+		success = on_stat(trap, true, false, false);
 		break;
 
 	case SYS_newfstatat:
-		success = on_stat(trap, true, true);
+		success = on_stat(trap, true, true, false);
 		break;
 
 	case SYS_lstat:
-		success = on_lstat(trap);
+		success = on_stat(trap, false, false, true);
 		break;
 
 	case SYS_read:
@@ -96,7 +96,7 @@ bool syscall_redirect(struct syscall_mod *trap) {
 /**
  * open: syscall 2
  */
-bool on_open(struct syscall_mod *trap, bool openat) {
+bool on_open(syscall_mod *trap, bool openat) {
 	int n = 0;
 	int base_arg_id = 0;
 
@@ -186,7 +186,7 @@ bool on_open(struct syscall_mod *trap, bool openat) {
 /**
  * read: syscall 0
  */
-bool on_read(struct syscall_mod *trap) {
+bool on_read(syscall_mod *trap) {
 	int   fd       = (int)trap->get_arg(0);
 	char *buf      = (char *)trap->get_arg(1);
 	int   buf_size = (int)trap->get_arg(2);
@@ -246,7 +246,7 @@ bool on_read(struct syscall_mod *trap) {
 /**
  * close: syscall 3
  */
-bool on_close(struct syscall_mod *trap) {
+bool on_close(syscall_mod *trap) {
 	int fd = (int)trap->get_arg(0);
 
 	if (trap->pstate->files.find(fd) != trap->pstate->files.end()) {
@@ -265,7 +265,7 @@ bool on_close(struct syscall_mod *trap) {
 /**
  * getdents: syscall 78
  */
-bool on_getdents(struct syscall_mod *trap) {
+bool on_getdents(syscall_mod *trap) {
 	int                  fd    = (int)trap->get_arg(0);
 	struct linux_dirent *dirp  = (struct linux_dirent *)trap->get_arg(1);
 	int                  count = (int)trap->get_arg(2);
@@ -329,22 +329,31 @@ bool on_getdents(struct syscall_mod *trap) {
 /**
  * stat: syscall 4, fstat: syscall 5
  */
-bool on_stat(struct syscall_mod *trap, bool do_fdlookup, bool do_at) {
+bool on_stat(syscall_mod *trap, bool do_fdlookup, bool do_at, bool do_lstat) {
 	char *stat_result_ptr;
 
 	struct received_data recv_data;
-	struct injection *injection = new_injection("/tmp/stat.inject");
-	injection_load_code(injection);
+	struct injection *injection;
 
 	const char *stat_path = NULL;
+	const char *stat_type_str = NULL;
 	char stat_path_buf[max_path_len];
 	char statat_path_buf[max_path_len];
 
 	int n;
 
+	if (do_lstat) {
+		injection = new_injection("/tmp/lstat.inject");
+		stat_type_str = "lstat";
+	}
+	else {
+		injection = new_injection("/tmp/stat.inject");
+		stat_type_str = "stat";
+	}
+	injection_load_code(injection);
+
 	if (do_fdlookup) {
 		int stat_fd = (int)trap->get_arg(0);
-
 		bool base_fdcwd = false;
 
 		// newfstatat requested
@@ -371,8 +380,8 @@ bool on_stat(struct syscall_mod *trap, bool do_fdlookup, bool do_at) {
 		if (do_at) {
 			// as arg0 is the fd, arg1 the filename -> arg2 resultptr
 			stat_result_ptr = (char *)trap->get_arg(2);
-			n = util::tstrncpy(trap, statat_path_buf, (const char *)trap->get_arg(1), max_path_len);
 
+			n = util::tstrncpy(trap, statat_path_buf, (const char *)trap->get_arg(1), max_path_len);
 			if (n < 0) {
 				throw util::Error("failed copying statat path string!\n");
 			}
@@ -402,12 +411,11 @@ bool on_stat(struct syscall_mod *trap, bool do_fdlookup, bool do_at) {
 		stat_result_ptr = (char *)trap->get_arg(1);
 
 		n = util::tstrncpy(trap, stat_path_buf, (const char *)trap->get_arg(0), max_path_len);
-
 		if (n < 0) {
 			throw util::Error("failed copying path string!\n");
 		}
 
-		PRINT_DEBUG("requested to stat filename '%s'\n", stat_path_buf);
+		PRINT_DEBUG("requested to %s filename '%s'\n", stat_type_str, stat_path_buf);
 
 		if (not util::is_abspath(stat_path_buf)) {
 			std::string path_s = util::abspath(trap->pstate->cwd, stat_path_buf);
@@ -456,15 +464,11 @@ out:
 }
 
 
-bool on_lstat(struct syscall_mod *trap) {
-	throw util::Error("lstat redirection not implemented yet!");
-}
-
 
 /**
  * lseek: syscall 8
  */
-bool on_lseek(struct syscall_mod *trap) {
+bool on_lseek(syscall_mod *trap) {
 	int  fd       = (int)trap->get_arg(0);
 	long position = (long)trap->get_arg(1);
 	int  whence   = (int)trap->get_arg(2);
@@ -493,7 +497,7 @@ bool on_lseek(struct syscall_mod *trap) {
 	return true;
 }
 
-bool on_fcntl(struct syscall_mod *trap) {
+bool on_fcntl(syscall_mod *trap) {
 	int fd        = (int)trap->get_arg(0);
 	int operation = (int)trap->get_arg(1);
 
@@ -547,7 +551,7 @@ bool on_fcntl(struct syscall_mod *trap) {
  *
  * change working dir of current process
  */
-bool on_chdir(struct syscall_mod *trap, bool do_fdlookup) {
+bool on_chdir(syscall_mod *trap, bool do_fdlookup) {
 	std::string new_work_dir;
 
 	if (do_fdlookup) {
@@ -585,7 +589,7 @@ bool on_chdir(struct syscall_mod *trap, bool do_fdlookup) {
  *
  * return working dir of current process
  */
-bool on_getcwd(struct syscall_mod *trap) {
+bool on_getcwd(syscall_mod *trap) {
 	char   *cwd_result_ptr = (char *)trap->get_arg(0);
 	size_t  max_buf_len    = (size_t)trap->get_arg(1);
 
@@ -606,7 +610,7 @@ bool on_getcwd(struct syscall_mod *trap) {
 	return true;
 }
 
-bool on_uname(struct syscall_mod *trap) {
+bool on_uname(syscall_mod *trap) {
 	char *result_ptr = (char *)trap->get_arg(0);
 	int n;
 
@@ -639,39 +643,42 @@ bool on_uname(struct syscall_mod *trap) {
 	return true;
 }
 
-bool on_getxattr(struct syscall_mod *trap) {
+bool on_readlink(syscall_mod *trap, bool do_at) {
+	throw util::Error("readlink redirection not implemented yet!");
+}
+
+bool on_getxattr(syscall_mod *trap) {
 	throw util::Error("getxattr redirection not implemented yet!");
 }
 
-bool on_lgetxattr(struct syscall_mod *trap) {
+bool on_lgetxattr(syscall_mod *trap) {
 	throw util::Error("lgetxattr redirection not implemented yet!");
 }
 
-bool on_clock_gettime(struct syscall_mod *trap) {
+bool on_clock_gettime(syscall_mod *trap) {
 	throw util::Error("clock_gettime redirection not implemented yet!");
 }
 
-bool on_statfs(struct syscall_mod *trap) {
-	throw util::Error("statfs redirection not implemented yet!");
+bool on_clock_getres(syscall_mod *trap) {
+	throw util::Error("clock_getres redirection not implemented yet!");
 }
 
-bool on_readlink(struct syscall_mod *trap) {
-	throw util::Error("readlink redirection not implemented yet!");
-
+bool on_statfs(syscall_mod *trap) {
+	throw util::Error("statfs redirection not implemented yet!");
 }
 
 // ##################
 // syscalls with write access
 // ##################
 
-bool on_write(struct syscall_mod *trap) {
+bool on_write(syscall_mod *trap) {
 	throw util::Error("write redirection not implemented yet!");
 }
 
-bool on_unlink(struct syscall_mod *trap) {
+bool on_unlink(syscall_mod *trap) {
 	throw util::Error("unlink redirection not implemented yet!");
 }
 
-bool on_unlinkad(struct syscall_mod *trap) {
+bool on_unlinkat(syscall_mod *trap) {
 	throw util::Error("unlink redirection not implemented yet!");
 }

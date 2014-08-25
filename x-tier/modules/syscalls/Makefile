@@ -1,4 +1,4 @@
-SYSCALLS=getdents open read stat uname
+SYSCALLS=getdents open read stat uname lstat
 
 all: $(SYSCALLS)
 
