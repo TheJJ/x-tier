@@ -389,7 +389,7 @@ if __name__ == "__main__":
     p.add_argument("-i", "--header", action='append', help="add the given header to the include list")
     p.add_argument("function_name", help="generated function name")
     p.add_argument("jump_name", help="external function name to be called")
-    p.add_argument("argument", nargs="*", help="arguments for the external function call. add [len] or <lenvar> to type to define buffer sizes.")
+    p.add_argument("argument", nargs="*", help="arguments for the external function call. add vartype[len] to type to define buffer sizes.")
 
     args = p.parse_args()
     main(args)
