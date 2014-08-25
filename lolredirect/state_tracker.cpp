@@ -26,6 +26,33 @@ constexpr bool print_syscalls = false;
  */
 
 
+const char *redirect_reason_str(struct decision d) {
+	redirect_reason r = d.reason;
+	const char *ret;
+	switch(r) {
+	case redirect_reason::PATH:
+		ret = "path";
+		break;
+	case redirect_reason::FD:
+		ret = "fd";
+		break;
+	case redirect_reason::UNHANDLED:
+		ret = "unhandled syscall";
+		break;
+	case redirect_reason::INITSECTION:
+		ret = "in program initsection";
+		break;
+	case redirect_reason::FORCED:
+		ret = "redirection forced";
+		break;
+	default:
+		ret = "unknown decision reason!";
+		break;
+	}
+	return ret;
+}
+
+
 brk_state::brk_state(struct process_state *pstate)
 	:
 	pstate(pstate),
@@ -66,7 +93,7 @@ struct decision process_state::redirect_decision(struct syscall_mod *trap) {
 		trap->print_registers();
 	}
 
-	PRINT_DEBUG("encountered syscall %03d => %s\n", trap->syscall_id, syscall_name(trap->syscall_id));
+	PRINT_DEBUG("encountered syscall %03d %s\n", trap->syscall_id, syscall_name(trap->syscall_id));
 
 	char path[max_path_len];
 
@@ -83,6 +110,7 @@ struct decision process_state::redirect_decision(struct syscall_mod *trap) {
 	switch (trap->syscall_id) {
 	case SYS_open:
 	case SYS_stat:
+	case SYS_lstat:
 	case SYS_chdir:
 		n = util::tstrncpy(trap, path, (char *)trap->get_arg(0), max_path_len);
 		break;
@@ -111,10 +139,10 @@ struct decision process_state::redirect_decision(struct syscall_mod *trap) {
 		break;
 
 		//unimplemented syscalls:
-	case SYS_lstat:
 	case SYS_uname:
 	case SYS_ioctl:
 		possibly_redirect = false;
+		break;
 
 		//syscalls to redirect no matter what:
 	case SYS_getcwd:
@@ -123,7 +151,9 @@ struct decision process_state::redirect_decision(struct syscall_mod *trap) {
 	case SYS_getegid:
 	case SYS_getresgid:
 	case SYS_getresuid:
+		ret.reason   = redirect_reason::FORCED;
 		ret.redirect = true;
+		break;
 	default:
 		possibly_redirect = false;
 	}
@@ -210,23 +240,27 @@ struct decision process_state::redirect_decision(struct syscall_mod *trap) {
 			ret.redirect = true;
 			ret.reason = redirect_reason::FD;
 		};
-	} else {
-		ret.redirect = false;
-		ret.reason   = redirect_reason::NOTNEEDED;
+	} else if (ret.redirect == false) {
+		ret.reason   = redirect_reason::UNHANDLED;
 	}
 
 	trap->pstate->syscall_count += 1;
 
+	const char *action;
+
 	if (ret.redirect) {
 		trap->pstate->redirect_syscall_count += 1;
-		PRINT_DEBUG("\t`-> redirect syscall %d\n", trap->syscall_id);
+		action = "REDIRECTING";
 	}
 	else if (trap->syscall_id >= 0) {
 		trap->pstate->host_syscall_count += 1;
-		PRINT_DEBUG("\t`-> syscall %d regular on host\n", trap->syscall_id);
+		action = "ON HOST    ";
 	} else {
 		throw util::Error("syscall negative: %d! wtf?!\n", trap->syscall_id);
 	}
+
+	const char *reason = redirect_reason_str(ret);
+	PRINT_DEBUG("\t`-> syscall %s %03d %s: %s\n", action, trap->syscall_id, syscall_name(trap->syscall_id), reason);
 
 	return ret;
 }

@@ -18,9 +18,12 @@ enum class execution_section {
 enum class redirect_reason {
 	PATH,
 	FD,
-	NOTNEEDED,
+	UNHANDLED,
 	INITSECTION,
+	FORCED,
 };
+
+const char *redirect_reason_str(redirect_reason r);
 
 struct decision {
 	decision() : redirect(false) {};

@@ -2,6 +2,7 @@
 
 #include <fcntl.h>
 #include <sys/syscall.h>
+#include <sys/utsname.h>
 #include <unistd.h>
 
 #include "syscall_redirector.h"
@@ -15,7 +16,15 @@ bool syscall_redirect(struct syscall_mod *trap) {
 
 	switch (trap->syscall_id) {
 	case SYS_getuid:
+	case SYS_getgid:
+	case SYS_getegid:
+	case SYS_getresgid:
+	case SYS_getresuid:
 		trap->set_return(0);
+		break;
+
+	case SYS_uname:
+		success = on_uname(trap);
 		break;
 
 	case SYS_getdents:
@@ -46,14 +55,16 @@ bool syscall_redirect(struct syscall_mod *trap) {
 		success = on_stat(trap, true, true);
 		break;
 
-	case SYS_lstat: //TODO, link stat
+	case SYS_lstat:
+		success = on_lstat(trap);
 		break;
 
 	case SYS_read:
 		success = on_read(trap);
 		break;
 
-	case SYS_write: //TODO
+	case SYS_write:
+		success = on_write(trap);
 		break;
 
 	case SYS_lseek:
@@ -444,6 +455,12 @@ out:
 	return true;
 }
 
+
+bool on_lstat(struct syscall_mod *trap) {
+	throw util::Error("lstat redirection not implemented yet!");
+}
+
+
 /**
  * lseek: syscall 8
  */
@@ -587,4 +604,74 @@ bool on_getcwd(struct syscall_mod *trap) {
 
 	trap->set_return((uint64_t)cwd_result_ptr);
 	return true;
+}
+
+bool on_uname(struct syscall_mod *trap) {
+	char *result_ptr = (char *)trap->get_arg(0);
+	int n;
+
+	struct received_data recv_data;
+	struct injection *injection = new_injection("/tmp/uname.inject");
+	injection_load_code(injection);
+	injection = consolidate(injection);
+
+	PRINT_DEBUG("querying uname...\n");
+	inject_module(injection, &recv_data);
+
+	if (recv_data.return_value < 0) {
+		return recv_data.return_value;
+	}
+
+	if (recv_data.length != sizeof(struct utsname)) {
+		free_injection(injection);
+		throw util::Error("recieved wrong struct size!");
+	}
+
+	// store data to other process
+	n = util::tmemcpy(trap, result_ptr, recv_data.data, sizeof(struct utsname), true);
+	if (n < 0) {
+		free_injection(injection);
+		throw util::Error("failed storing result!");
+	}
+
+	trap->set_return(recv_data.return_value);
+	free_injection(injection);
+	return true;
+}
+
+bool on_getxattr(struct syscall_mod *trap) {
+	throw util::Error("getxattr redirection not implemented yet!");
+}
+
+bool on_lgetxattr(struct syscall_mod *trap) {
+	throw util::Error("lgetxattr redirection not implemented yet!");
+}
+
+bool on_clock_gettime(struct syscall_mod *trap) {
+	throw util::Error("clock_gettime redirection not implemented yet!");
+}
+
+bool on_statfs(struct syscall_mod *trap) {
+	throw util::Error("statfs redirection not implemented yet!");
+}
+
+bool on_readlink(struct syscall_mod *trap) {
+	throw util::Error("readlink redirection not implemented yet!");
+
+}
+
+// ##################
+// syscalls with write access
+// ##################
+
+bool on_write(struct syscall_mod *trap) {
+	throw util::Error("write redirection not implemented yet!");
+}
+
+bool on_unlink(struct syscall_mod *trap) {
+	throw util::Error("unlink redirection not implemented yet!");
+}
+
+bool on_unlinkad(struct syscall_mod *trap) {
+	throw util::Error("unlink redirection not implemented yet!");
 }
