@@ -43,7 +43,20 @@ class FuncArgument:
 
         return ret
 
+    def mod_espoffset(self, size):
+        return "\tesp_offset += %s;" % size
+
+    def memcpy(self, dest, src, size):
+        return Template(
+"""for (i = 0; i < ${size}; i++) {
+		${dest}[i] = ${src}[i];
+	}""").substitute(dest=dest, src=src, size=size)
+
+
     def prepare_arg(self):
+        raise NotImplementedError("implement in subclass")
+
+    def copy_back_arg(self):
         raise NotImplementedError("implement in subclass")
 
     def get_func_arg(self):
@@ -55,6 +68,9 @@ class NumberArgument(FuncArgument):
         super().__init__(name, 8)
 
     def prepare_arg(self):
+        return ""
+
+    def copy_back_arg(self):
         return ""
 
     def get_func_arg(self):
@@ -69,27 +85,58 @@ class CharArrayArgument(FuncArgument):
     allocates stack memory of given length
     """
 
-    def __init__(self, name, length):
+    def __init__(self, name, length, inout):
         super().__init__(name, 8)
         self.length = length
 
+        if inout not in ("in", "out"):
+            raise Exception("buffers have to be declared in or out")
+        self.inout  = inout
+
     def copy_to_stack(self, name, length):
         return Template("""
-	esp_offset += ${length};
-	char *${name}_stack_buffer = (char *)(((char *)kernel_esp) - ${length});
-	for (i = 0; i < ${length}; i++) {
-		${name}_stack_buffer[i] = ${name}[i];
-	}
-""").substitute(name=name, length=length)
+	char *${name}_stack_buffer = (char *)(((char *)kernel_esp) - (esp_offset + ${length}));
+	${memcpy}
+""").substitute(
+    name   = name,
+    length = length,
+    memcpy = self.memcpy(self.get_asm_arg(), name, length),
+)
 
     def prepare_arg(self):
-        return Template("""
+        if self.inout == "in":
+            return Template("""
 	// === ${arg_repr}
 ${stackcpy}
-""").substitute(arg_repr=repr(self), stackcpy=self.copy_to_stack(self.name, self.length))
+${esp_mod}
+""").substitute(
+    arg_repr = repr(self),
+    esp_mod  = self.mod_espoffset(self.length),
+    stackcpy = self.copy_to_stack(self.name, self.length),
+)
+        elif self.inout == "out":
+            return self.mod_espoffset(self.length) + " // reserve space for " + self.name
+
+    def copy_back_arg(self):
+        if self.inout == "in":
+            return ""
+        elif self.inout == "out":
+            # TODO: currently copies the WHOLE buffer back,
+            #       the external function might have filled less than that.
+            return Template("""
+	${memcpy}
+""").substitute(
+    memcpy=self.memcpy(self.name, self.get_asm_arg(), self.length)
+)
 
     def get_func_arg(self):
         return "const char *%s" % self.name
+
+    def get_asm_arg(self):
+        if self.inout == "out":
+            return self.name
+        elif self.inout == "in":
+            return "%s_stack_buffer" % self.name
 
     def __repr__(self):
         return "argument: char %s[%s]" % (self.name, self.length)
@@ -101,8 +148,8 @@ class StringArgument(CharArrayArgument):
     also generates length calculation snippet.
     """
 
-    def __init__(self, name):
-        super().__init__(name, 0)
+    def __init__(self, name, inout):
+        super().__init__(name, 0, inout)
 
     def determine_length(self, name):
         return Template(
@@ -116,16 +163,34 @@ class StringArgument(CharArrayArgument):
 """).substitute(name=name)
 
     def prepare_arg(self):
-        return Template("""
+        if self.inout == "out":
+            return ""
+        elif self.inout == "in":
+            return Template("""
 	// === argument: char *${name}
 	${get_length}
 	${stackcpy}
+	${esp_mod}
 	// ====
 """).substitute(
     name       = self.name,
     get_length = self.determine_length(self.name),
-    stackcpy   = self.copy_to_stack(self.name, "%s_length" % self.name)
+    stackcpy   = self.copy_to_stack(self.name, "%s_length" % self.name),
+    esp_mod    = self.mod_espoffset("%s_length" % self.name),
 )
+
+    def copy_back_arg(self):
+        if self.inout == "in":
+            return ""
+        elif self.inout == "out":
+            return Template("""
+	${get_length}
+	${memcpy}
+""").substitute(
+    get_length = self.determine_length(self.get_asm_arg()),
+    memcpy     = self.memcpy(self.name, self.get_asm_arg(), "%s_length" % self.get_asm_arg())
+)
+
 
     def __repr__(self):
         return "argument: char *%s" % (self.name)
@@ -161,8 +226,8 @@ ${args_prepare}
 		"push %%rbp;"          // save EBP
 		"mov  %%rsp, %%rbp;"   // save stack pointer
 		"mov  %%rax, %%rsp;"   // set stack pointer
-		"mov  $$42, %%rax;"    // select `command` as interrupt handler in RAX
-		"int  $$42;"           // send interrupt, hypercall happens here
+		"mov  $$42, %%rax;"     // select `command` as interrupt handler in RAX
+		"int  $$42;"            // send interrupt, hypercall happens here
 		"mov  %%rbp, %%rsp;"   // restore RSP
 		"pop  %%rbp;"          // restore RBP
 
@@ -172,19 +237,23 @@ ${args_prepare}
 		"r"(kernel_esp),
 		"r"(esp_offset),
 		${argument_regs}
-		"m"(open_ret)          // return value
+		"m"(return_value)
 		:
-		"rax", "rbx", ${argument_regs_clobbered});
+		"rax", "rbx", ${argument_regs_clobbered}
+	);
 
-	// Return to caller
-	return open_ret;
+${args_copyback}
+
+	// return to caller
+	return return_value;
 }
 """)
 
-    def __init__(self, name, dest_name, args):
-        self.name = name  # function name
+    def __init__(self, name, dest_name, args, headers):
+        self.name      = name      # function name
         self.dest_name = dest_name # external function name to call
-        self.args = args
+        self.args      = args
+        self.headers   = set(headers) if headers else set()
 
     def get_code(self):
         param_id = 2 # we already got 2 asm params in the template
@@ -194,23 +263,28 @@ ${args_prepare}
         prepare_args   = list()
         clobbered_regs = list()
         function_args  = list()
+        copy_back_args = list()
 
         for idx, arg in enumerate(self.args):
             function_args.append(arg.get_func_arg())
             prepare_args.append(arg.prepare_arg())
             to_regs.extend(arg.move_value(param_id, idx))
+            copy_back_args.append(arg.copy_back_arg())
 
             reg_args.append(arg.name)
             clobbered_regs.append(arg_reg[idx])
             param_id += 1
-
 
         function_args  = ", ".join(function_args)
         prepare_args   = "".join(prepare_args)
         reg_args       = "".join(['"m"(%s), ' % a for a in reg_args])
         clobbered_regs = ", ".join(['"%s"'    % a for a in clobbered_regs])
         to_regs        = "\n\t\t".join(to_regs)
-        headers        = "#include <stdint.h>" if "int64_t" in function_args else ""
+        args_copyback  = "".join(copy_back_args)
+
+        if "int64_t" in function_args:
+            self.headers.add("<stdint.h>")
+        headers        = "".join(["#include %s\n" % h for h in self.headers])
 
         c = self.templ.substitute(
             header_include          = headers,
@@ -221,6 +295,7 @@ ${args_prepare}
             args_to_regs            = to_regs,
             argument_regs           = reg_args,
             argument_regs_clobbered = clobbered_regs,
+            args_copyback           = args_copyback,
         )
 
         return c
@@ -254,20 +329,32 @@ def create_args(args):
         if atype.count("*") > 1:
             raise Exception("more than single ptrs not supported yet!")
 
+        atypel = atype.split(" ")
+        if all([w in atypel for w in ("in", "out")]):
+            raise Exception("both in and out defined")
+        elif "in" in atypel:
+            inout = "in"
+        elif "out" in atypel:
+            inout = "out"
+        else:
+            inout = ""
+
+        length_var = re.search(r"\[([\w\(\)]+|\d+)\]", atype)
+
         if all([w in atype for w in ("char", "*")]):
             # char ptr arg
 
-            length_known = re.search(r"<(\w+)>", atype)
-            if length_known:
+            if length_var:
                 # length is known, stored in variable
-                ret.append(CharArrayArgument(aname, length_known.group(1)))
+                ret.append(CharArrayArgument(aname, length_var.group(1), inout))
             else:
+                if inout == "out":
+                    raise Exception("output strings are not possible, you probably wanna use a buffer!")
                 # \0 terminated.
-                ret.append(StringArgument(aname))
+                ret.append(StringArgument(aname, inout, outbufsize))
         else:
-            array = re.search(r"\[(\d+)\]", atype)
-            if array:
-                ret.append(CharArrayArgument(aname, array.group(1)))
+            if length_var:
+                ret.append(CharArrayArgument(aname, length_var.group(1), inout))
             else:
                 # regular number argument
                 ret.append(NumberArgument(aname))
@@ -276,12 +363,13 @@ def create_args(args):
 
 def main(args):
     wrapper_args = create_args(parse_func_args(args.argument))
-    w = Wrapper(args.function_name, args.jump_name, wrapper_args)
+    w = Wrapper(args.function_name, args.jump_name, wrapper_args, args.header)
     print(w.get_code())
 
 
 if __name__ == "__main__":
     p = argparse.ArgumentParser(description='x-tier wrapper generator. generates stealty external function calling wrappers.')
+    p.add_argument("-i", "--header", action='append', help="add the given header to the include list")
     p.add_argument("function_name", help="generated function name")
     p.add_argument("jump_name", help="external function name to be called")
     p.add_argument("argument", nargs="*", help="arguments for the external function call. add [len] or <lenvar> to type to define buffer sizes.")
