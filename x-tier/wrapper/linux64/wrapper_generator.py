@@ -7,6 +7,7 @@
 import argparse
 import re
 from string import Template
+import sys
 
 hypercall_id      = 42
 hypercall_command = 42
@@ -64,6 +65,9 @@ class FuncArgument:
     def get_func_arg(self):
         raise NotImplementedError("implement in subclass")
 
+    def get_asm_arg(self):
+        raise NotImplementedError("implement in subclass")
+
 
 class NumberArgument(FuncArgument):
     def __init__(self, name):
@@ -81,6 +85,9 @@ class NumberArgument(FuncArgument):
         else:
             raise Exception("other than int64_t non-ptr arguments not supported")
 
+    def get_asm_arg(self):
+        return self.name
+
 
 class CharArrayArgument(FuncArgument):
     """
@@ -92,7 +99,7 @@ class CharArrayArgument(FuncArgument):
         self.length = length
 
         if inout not in ("in", "out"):
-            raise Exception("buffers have to be declared in or out")
+            raise Exception("buffers have to be declared in or out: %s was not." % self.name)
         self.inout  = inout
 
     def copy_to_stack(self, name, length):
@@ -207,7 +214,7 @@ class Wrapper:
     templ = Template("""
 #include "../../../tmp/sysmap.h"  // kernel symbol names
 ${header_include}
-
+${comment}
 // variables to be patches by injection shellcode, in .text section
 unsigned long kernel_esp     __attribute__ ((section (".text"))) = 0;
 unsigned long target_address __attribute__ ((section (".text"))) = 0;
@@ -261,7 +268,7 @@ ${args_copyback}
         self.args      = args
         self.headers   = set(headers) if headers else set()
 
-    def get_code(self):
+    def get_code(self, opt_comment=""):
         param_id = 2 # we already got 2 asm params in the template
 
         to_regs        = list()
@@ -277,7 +284,7 @@ ${args_copyback}
             to_regs.extend(arg.move_value(param_id, idx))
             copy_back_args.append(arg.copy_back_arg())
 
-            reg_args.append(arg.name)
+            reg_args.append(arg.get_asm_arg())
             clobbered_regs.append(arg_reg[idx])
             param_id += 1
 
@@ -303,6 +310,7 @@ ${args_copyback}
             argument_regs_clobbered = clobbered_regs,
             args_copyback           = args_copyback,
             retarg_id               = param_id,
+            comment                 = opt_comment,
         )
 
         return c
@@ -358,7 +366,7 @@ def create_args(args):
                 if inout == "out":
                     raise Exception("output strings are not possible, you probably wanna use a buffer!")
                 # \0 terminated.
-                ret.append(StringArgument(aname, inout, outbufsize))
+                ret.append(StringArgument(aname, inout))
         else:
             if length_var:
                 ret.append(CharArrayArgument(aname, length_var.group(1), inout))
@@ -371,7 +379,9 @@ def create_args(args):
 def main(args):
     wrapper_args = create_args(parse_func_args(args.argument))
     w = Wrapper(args.function_name, args.jump_name, wrapper_args, args.header)
-    print(w.get_code())
+    print(w.get_code(
+        "/**\n * generated with: %s\n */\n" % (' '.join(["'%s'" % a for a in sys.argv]))
+    ))
 
 
 if __name__ == "__main__":
