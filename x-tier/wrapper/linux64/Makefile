@@ -1,4 +1,4 @@
-wrappers = sys_open sys_close sys_read sys_getdents sys_lseek sys_stat XTIER_vfs_stat cp_new_stat sys_newuname XTIER_vfs_lstat
+wrappers = sys_open sys_close sys_read sys_getdents sys_lseek sys_stat XTIER_vfs_stat cp_new_stat sys_newuname XTIER_vfs_lstat sys_write
 
 wrappers_elf = $(patsubst %,%.elf,$(wrappers))
 

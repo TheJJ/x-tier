@@ -738,7 +738,73 @@ bool on_statfs(syscall_mod *trap) {
 // ##################
 
 bool on_write(syscall_mod *trap) {
-	throw util::Error("write redirection not implemented yet!");
+	int   fd       = (int)trap->get_arg(0);
+	char *buf      = (char *)trap->get_arg(1);
+	int   buf_size = (int)trap->get_arg(2);
+
+	PRINT_DEBUG("write to fd %d from buf 0x%lx size %d\n", fd, (long)buf, buf_size);
+
+	struct received_data recv_data;
+	struct injection *injection = NULL;
+
+	// take the corresponding file_state from our stored file state dict
+	auto search = trap->pstate->files.find(fd);
+	if (search == trap->pstate->files.end()) {
+		PRINT_ERROR("File Descriptor %d unknown!\n", fd);
+		trap->set_return(-EBADF);
+		return true;
+	}
+	struct file_state *fs = search->second;
+
+	constexpr size_t write_chunk_size = 2048;
+	char writebuf[write_chunk_size];
+	int total_written = 0;
+	int written = 0;
+	int write_chunk = 0;
+
+	PRINT_DEBUG("Trying to write %d bytes to file '%s'...\n", buf_size, fs->path.c_str());
+
+	do {
+		int write_bytes = (buf_size - total_written) % write_chunk_size;
+		buf += written; // slide src buffer beginning
+		int n = util::tmemcpy(trap, writebuf, buf, write_bytes, false);
+		if (n < 0) {
+			throw util::Error("failed fetching write buffer from tracked process!");
+		}
+
+		// create the injection for each write call.. we can't 'unconsolidate' currently.
+		injection = new_injection("/tmp/write.inject");
+		injection_load_code(injection);
+
+		add_string_argument(injection, fs->path.c_str());
+		add_int_argument(injection, fs->flags);
+		add_int_argument(injection, fs->pos);
+		add_struct_argument(injection, writebuf, write_bytes);
+		add_int_argument(injection, write_bytes);
+		injection = consolidate(injection);
+
+		PRINT_DEBUG("Writing chunk %d, size %d\n", write_chunk, write_bytes);
+		inject_module(injection, &recv_data);
+
+		written = recv_data.return_value;
+		total_written += written;
+
+		free_injection(injection);
+
+		write_chunk += 1;
+	} while (written > 0 && total_written < buf_size);
+
+
+	int64_t ret;
+	if (written < 0) {
+		ret = written;
+	} else {
+		ret = total_written;
+	}
+
+	PRINT_DEBUG("write(%s) returned %ld\n", fs->path.c_str(), ret);
+	trap->set_return(ret);
+	return true;
 }
 
 bool on_unlink(syscall_mod *trap) {
