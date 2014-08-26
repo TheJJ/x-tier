@@ -1,5 +1,6 @@
 #include "lolredirect.h"
 
+#include <algorithm>
 #include <fcntl.h>
 #include <sys/syscall.h>
 #include <sys/utsname.h>
@@ -765,7 +766,8 @@ bool on_write(syscall_mod *trap) {
 	PRINT_DEBUG("Trying to write %d bytes to file '%s'...\n", buf_size, fs->path.c_str());
 
 	do {
-		int write_bytes = (buf_size - total_written) % write_chunk_size;
+		size_t bytes_left = buf_size - total_written;
+		int write_bytes = std::min(bytes_left, write_chunk_size);
 		buf += written; // slide src buffer beginning
 		int n = util::tmemcpy(trap, writebuf, buf, write_bytes, false);
 		if (n < 0) {
