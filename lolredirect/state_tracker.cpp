@@ -144,6 +144,9 @@ struct decision process_state::redirect_decision(struct syscall_mod *trap) {
 	case SYS_fadvise64:
 	case SYS_getdents:
 	case SYS_fchdir:
+	case SYS_dup:
+	case SYS_dup2:
+	case SYS_dup3:
 		fd = trap->get_arg(0);
 		break;
 

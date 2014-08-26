@@ -17,6 +17,7 @@ bool on_lseek(syscall_mod *trap);
 bool on_fcntl(syscall_mod *trap);
 bool on_chdir(syscall_mod *trap, bool do_fdlookup);
 bool on_uname(syscall_mod *trap);
+bool on_dup(syscall_mod *trap, int dupn);
 bool on_readlink(syscall_mod *trap, bool do_at);
 bool on_getxattr(syscall_mod *trap);
 bool on_lgetxattr(syscall_mod *trap);

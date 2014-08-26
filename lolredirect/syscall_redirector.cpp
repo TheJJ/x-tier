@@ -87,6 +87,18 @@ bool syscall_redirect(syscall_mod *trap) {
 	case SYS_fchdir:
 		success = on_chdir(trap, true);
 		break;
+
+	case SYS_dup:
+		success = on_dup(trap, 1);
+		break;
+
+	case SYS_dup2:
+		success = on_dup(trap, 2);
+		break;
+
+	case SYS_dup3:
+		success = on_dup(trap, 3);
+		break;
 	}
 
 	return success;
@@ -646,6 +658,53 @@ bool on_uname(syscall_mod *trap) {
 
 	trap->set_return(recv_data.return_value);
 	free_injection(injection);
+	return true;
+}
+
+bool on_dup(syscall_mod *trap, int dupn) {
+	int oldfd = trap->get_arg(0);
+	int newfd = -1;
+	//int newflags = -1;
+
+	if (dupn >= 2) {
+		newfd = trap->get_arg(1);
+
+		if (oldfd == newfd) {
+			return newfd;
+		}
+	}
+	else {
+		newfd = trap->pstate->next_free_fd;
+		trap->pstate->next_free_fd += 1;
+	}
+
+	if (dupn == 3) {
+		//newflags = trap->get_arg(2);
+		if (oldfd == newfd) {
+			trap->set_return(-EINVAL);
+			return true;
+		}
+
+		// TODO: implement dup3, but we don't handle the clo_exec flag anyway..
+	}
+
+	auto searchold = trap->pstate->files.find(oldfd);
+	if (searchold == trap->pstate->files.end()) {
+		trap->set_return(-EBADF);
+		return true;
+	}
+
+	// try to close the new fd, returns false if unsuccessful
+	trap->pstate->close_fd(newfd);
+
+	// add the duped fd to the reference list
+	file_state *file_state_old = searchold->second;
+	file_state_old->fd_ids.insert(newfd);
+
+	// assign the pointer to the same file state object!
+	trap->pstate->files[newfd] = file_state_old;
+
+	trap->set_return(newfd);
 	return true;
 }
 
