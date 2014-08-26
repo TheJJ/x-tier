@@ -23,17 +23,17 @@ int strpcmp(const char *search, const char *prefix);
 /**
  * create an absolute path from the current working directory and a new path.
  */
-std::string abspath(std::string cwd, std::string path);
+std::string abspath(const std::string &cwd, const std::string &path);
 
 /**
  * normalize a path containing /A/../B/ to /B/ etc.
  */
-std::string normpath(std::string path);
+std::string normpath(const std::string &path);
 
 /**
  * check if the given path is an absolute path.
  */
-bool is_abspath(std::string path);
+bool is_abspath(const std::string &path);
 
 
 } //namespace util

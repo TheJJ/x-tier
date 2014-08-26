@@ -129,7 +129,7 @@ int tstrncpy(struct syscall_mod *trap, char *dest, const char *addr, ssize_t len
 }
 
 
-std::string abspath(std::string cwd, std::string path) {
+std::string abspath(const std::string &cwd, const std::string &path) {
 	if (path.length() > 0) {
 		if (is_abspath(path)) {
 			return path;
@@ -144,7 +144,7 @@ std::string abspath(std::string cwd, std::string path) {
 }
 
 
-std::string normpath(std::string path) {
+std::string normpath(const std::string &path) {
 	char        sep    = '/';
 	char        dot    = '.';
 	const char *dotdot = "..";
@@ -165,7 +165,7 @@ std::string normpath(std::string path) {
 	}
 
 	char *buf = new char[len + 1];
-	strncpy(buf, path.c_str(), len + 1);
+	memcpy(buf, path.c_str(), len + 1);
 	buf[len] = '\0';
 
 	int    tok_count     = 0;
@@ -174,9 +174,13 @@ std::string normpath(std::string path) {
 	char **new_comps     = new char*[slash_count];
 	int   *new_comp_lens = new int[slash_count];
 
-	//tokenize at /
+	char delims[2];
+	delims[0] = sep;
+	delims[1] = '\0';
+
+	// tokenize at /
 	for (str = buf; tok_count < slash_count; str = nullptr, tok_count++) {
-		tok = strtok_r(str, &sep, &tok_pos);
+		tok = strtok_r(str, delims, &tok_pos);
 
 		if (tok == nullptr) {
 			break;
@@ -189,7 +193,7 @@ std::string normpath(std::string path) {
 	int new_comps_len = 0;
 	int prev_len = 0;
 
-	//gather all path components: drop empty parts, the . and cancel out ..
+	// gather all path components: drop empty parts, the . and cancel out ..
 	for (int i = 0; i < tok_count; i++) {
 		int comp_len = strlen(comps[i]);
 		new_comp_lens[new_comps_pos] = comp_len;
@@ -219,8 +223,8 @@ std::string normpath(std::string path) {
 		}
 	}
 
-	//new path buffer, slash + components + component_count(for slashes)
-	char *new_path = new char[1 + new_comps_len + new_comps_pos];
+	// new path buffer, slash + components + component_count(for slashes) + \0
+	char *new_path = new char[1 + new_comps_len + new_comps_pos + 1];
 
 	char *path_insert_pos = new_path;
 
@@ -229,7 +233,7 @@ std::string normpath(std::string path) {
 		path_insert_pos += 1;
 	}
 
-	//create the new path with / as separators
+	// create the new path with / as separators
 	for (int i = 0; i < new_comps_pos; i++) {
 		if (i > 0) {
 			path_insert_pos[0] = sep;
@@ -252,7 +256,7 @@ std::string normpath(std::string path) {
 }
 
 
-bool is_abspath(std::string path) {
+bool is_abspath(const std::string &path) {
 	if (path.length() > 0) {
 		if (path[0] == '/') {
 			return true;
