@@ -33,7 +33,13 @@ int write(char *path, int flags, int offset, char *buf, int bytes)
 
 	// start writing data
 	do {
-		int to_write = (bytes - total_written) % WRITE_CHUNK_SIZE;
+		int to_write;
+		if ((bytes - total_written) > WRITE_CHUNK_SIZE) {
+			to_write = WRITE_CHUNK_SIZE;
+		}
+		else {
+			to_write = (bytes - total_written);
+		}
 
 		// slide the buffer beginning.
 		buf += wrote;
