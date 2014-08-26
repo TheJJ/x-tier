@@ -17,6 +17,7 @@ bool syscall_redirect(syscall_mod *trap) {
 	switch (trap->syscall_id) {
 	case SYS_getuid:
 	case SYS_getgid:
+	case SYS_geteuid:
 	case SYS_getegid:
 	case SYS_getresgid:
 	case SYS_getresuid:

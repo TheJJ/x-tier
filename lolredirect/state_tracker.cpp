@@ -187,6 +187,7 @@ struct decision process_state::redirect_decision(struct syscall_mod *trap) {
 	case SYS_getcwd:
 	case SYS_getuid:
 	case SYS_getgid:
+	case SYS_geteuid:
 	case SYS_getegid:
 	case SYS_getresgid:
 	case SYS_getresuid:
@@ -194,6 +195,8 @@ struct decision process_state::redirect_decision(struct syscall_mod *trap) {
 		ret.reason   = redirect_reason::FORCED;
 		ret.redirect = true;
 		break;
+
+		//unknown syscall id
 	default:
 		possibly_redirect = false;
 	}
