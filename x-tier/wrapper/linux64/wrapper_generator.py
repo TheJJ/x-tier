@@ -116,7 +116,7 @@ class CharArrayArgument(FuncArgument):
             return Template("""
 	// === ${arg_repr}
 ${stackcpy}
-${esp_mod}
+	${esp_mod}
 """).substitute(
     arg_repr = repr(self),
     esp_mod  = self.mod_espoffset(self.length),
