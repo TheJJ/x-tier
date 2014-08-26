@@ -4,6 +4,7 @@
 #include <sys/reg.h>
 #include <sys/syscall.h>
 #include <cstring>
+#include <vector>
 
 #include "syscall_utils.h"
 #include "util.h"
@@ -87,8 +88,14 @@ process_state::process_state(std::string cwd, int argc, char **argv)
 {}
 
 process_state::~process_state() {
+	std::vector<int> leaked_fds;
 	for (auto file : this->files) {
-		this->close_fd(file.first);
+		leaked_fds.push_back(file.first);
+	}
+
+	for (auto fdid : leaked_fds) {
+		PRINT_DEBUG("LEAKED fd %d, closing...\n", fdid);
+		this->close_fd(fdid);
 	}
 }
 
@@ -96,12 +103,13 @@ bool process_state::close_fd(int id) {
 	auto search = this->files.find(id);
 	if (search != this->files.end()) {
 		struct file_state *fstate = search->second;
+		PRINT_DEBUG("closing virtual fd %d..\n", id);
 		fstate->fd_ids.erase(id);
 		if (fstate->fd_ids.size() == 0) {
+			PRINT_DEBUG("deleting fd %d state..\n", id);
 			delete fstate;
 		}
 		this->files.erase(id);
-		PRINT_DEBUG("closed virtual fd %d\n", id);
 		return true;
 	} else {
 		return false;

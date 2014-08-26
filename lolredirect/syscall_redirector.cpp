@@ -214,7 +214,7 @@ bool on_read(syscall_mod *trap) {
 	// take the corresponding file_state from our stored file state dict
 	auto search = trap->pstate->files.find(fd);
 	if (search == trap->pstate->files.end()) {
-		PRINT_ERROR("File Descriptor %d unkown!\n", fd);
+		PRINT_ERROR("File Descriptor %d unknown!\n", fd);
 		trap->set_return(-EBADF);
 		return true;
 	}
