@@ -97,7 +97,7 @@ int run(int argc, char **argv, std::string cwd) {
 
 		ptrace(PTRACE_TRACEME, 0, 0, 0);
 		execvp(argv[0], argv);
-		PRINT_DEBUG("target exec fail'd!");
+		PRINT_DEBUG("target exec fail'd!\n");
 		return 1;
 	}
 	else {
@@ -185,7 +185,7 @@ int parse_args(int argc, char **argv, int *call_argc, char **&call_argv, std::st
 			{0,                       0,    0,   0 }
 		};
 
-		c = getopt_long(argc, argv, "h", long_options, &option_index);
+		c = getopt_long(argc, argv, "hc:p:", long_options, &option_index);
 		if (c == -1)
 			break;
 
@@ -238,6 +238,8 @@ int parse_args(int argc, char **argv, int *call_argc, char **&call_argv, std::st
 		call_argv[*call_argc] = NULL;
 	} else {
 		printf("usage: %s [options] -- <program> <arg 0> <arg n...>\n", argv[0]);
+		printf("   -h --help: display help\n");
+		printf("   -c --cwd:  initial working directory (default: /)\n");
 		ret = 2;
 	}
 

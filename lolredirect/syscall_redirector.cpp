@@ -90,6 +90,10 @@ bool syscall_redirect(syscall_mod *trap) {
 		success = on_chdir(trap, true);
 		break;
 
+	case SYS_getcwd:
+		success = on_getcwd(trap);
+		break;
+
 	case SYS_dup:
 		success = on_dup(trap, 1);
 		break;
