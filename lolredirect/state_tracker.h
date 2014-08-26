@@ -3,6 +3,7 @@
 
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 
 #include "lolredirect.h"
 #include "syscall_redirector.h"
@@ -34,7 +35,7 @@ struct decision {
 
 
 struct file_state {
-	int fd;            // emulated file descriptor id
+	std::unordered_set<int> fd_ids; // virtual file descriptor ids
 	std::string path;  // filename
 	int flags;         // file open flags
 	int mode;          // file open mode
@@ -62,7 +63,7 @@ struct process_state {
 	char **argv;
 	execution_section state;
 	unsigned int next_free_fd;
-	std::unordered_map<int, struct file_state> files;
+	std::unordered_map<int, struct file_state *> files;
 
 	int syscall_id_previous;
 	struct brk_state brk_handler;
@@ -72,6 +73,8 @@ struct process_state {
 	int syscall_count;
 
 	struct decision redirect_decision(struct syscall_mod *trap);
+
+	bool close_fd(int id);
 };
 
 

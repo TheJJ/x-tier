@@ -128,7 +128,7 @@ bool on_open(syscall_mod *trap, bool openat) {
 					trap->set_return(-EBADF);
 					return true;
 				}
-				basepath = search->second.path;
+				basepath = search->second->path;
 			}
 
 			std::string path_s = util::abspath(basepath, path);
@@ -160,19 +160,21 @@ bool on_open(syscall_mod *trap, bool openat) {
 	if (recv_data.return_value >= 0) {
 		PRINT_DEBUG("open successful: '%s'\n", path);
 
-		struct file_state fd;
-		fd.fd = (int)trap->pstate->next_free_fd;
-		fd.path = path;
-		fd.flags = flags;
-		fd.mode = mode;
-		fd.pos = 0;
-		fd.close_on_exec = 0;
-		fd.getdents = false;
+		int fd_id = (int)trap->pstate->next_free_fd;
+		struct file_state *fd = new file_state{
+			{fd_id},
+			path,
+			flags,
+			mode,
+			0,
+			0,
+			false
+		};
 
-		trap->pstate->files[fd.fd] = fd;
+		trap->pstate->files[fd_id] = fd;
 
-		trap->set_return(fd.fd);
-		PRINT_DEBUG("virtual fd = '%d'\n", fd.fd);
+		trap->set_return(fd_id);
+		PRINT_DEBUG("virtual fd = '%d'\n", fd_id);
 		trap->pstate->next_free_fd += 1;
 	}
 	else {
@@ -204,7 +206,7 @@ bool on_read(syscall_mod *trap) {
 		return true;
 	}
 
-	struct file_state *fs = &trap->pstate->files[fd];
+	struct file_state *fs = search->second;
 
 	injection = new_injection("/tmp/read.inject");
 	injection_load_code(injection);
@@ -249,8 +251,7 @@ bool on_read(syscall_mod *trap) {
 bool on_close(syscall_mod *trap) {
 	int fd = (int)trap->get_arg(0);
 
-	if (trap->pstate->files.find(fd) != trap->pstate->files.end()) {
-		trap->pstate->files.erase(fd);
+	if (trap->pstate->close_fd(fd)) {
 		trap->set_return(0);
 		return true;
 	}
@@ -281,7 +282,7 @@ bool on_getdents(syscall_mod *trap) {
 		return true;
 	}
 
-	struct file_state *fs = &trap->pstate->files[fd];
+	struct file_state *fs = trap->pstate->files[fd];
 
 	// We only inject on the first getdents call
 	if (!fs->getdents) {
@@ -372,7 +373,7 @@ bool on_stat(syscall_mod *trap, bool do_fdlookup, bool do_at, bool do_lstat) {
 				trap->set_return(-EBADF);
 				return true;
 			}
-			stat_path = search->second.path.c_str();
+			stat_path = search->second->path.c_str();
 			PRINT_DEBUG("Looked up: fd %d => '%s'\n", stat_fd, stat_path);
 		}
 
@@ -481,7 +482,7 @@ bool on_lseek(syscall_mod *trap) {
 		return true;
 	}
 
-	fs = &trap->pstate->files[fd];
+	fs = trap->pstate->files[fd];
 
 	switch (whence) {
 	case SEEK_SET:
@@ -512,29 +513,34 @@ bool on_fcntl(syscall_mod *trap) {
 	//see include/uapi/asm-generic/fcntl.h
 	switch (operation) {
 
-	case F_DUPFD:
+	case F_DUPFD: {
 		PRINT_DEBUG("duplicating fd %d\n", fd);
 		//create fd copy.
 
-		trap->pstate->files[trap->pstate->next_free_fd] = trap->pstate->files[fd];
+		struct file_state *newstate = new file_state{};
+		memcpy(newstate, trap->pstate->files[fd], sizeof(file_state));
+		newstate->fd_ids.clear();
+		newstate->fd_ids.insert(trap->pstate->next_free_fd);
+
+		trap->pstate->files[trap->pstate->next_free_fd] = newstate;
 		trap->set_return(trap->pstate->next_free_fd);
 		trap->pstate->next_free_fd += 1;
 		break;
-
+	}
 	case F_GETFL:
 		PRINT_DEBUG("getting open flags for fd %d\n", fd);
-		syscall_return_val = trap->pstate->files[fd].flags;
+		syscall_return_val = trap->pstate->files[fd]->flags;
 		break;
 
 	case F_GETFD:
 		PRINT_DEBUG("getting fd flags (close_on_exec) for fd %d\n", fd);
-		syscall_return_val = trap->pstate->files[fd].close_on_exec;
+		syscall_return_val = trap->pstate->files[fd]->close_on_exec;
 		break;
 
 	case F_SETFD: {
 		int new_coe = (int)trap->get_arg(2);
 		PRINT_DEBUG("setting fd flags (close_on_exec) for fd %d to %d\n", fd, new_coe);
-		trap->pstate->files[fd].close_on_exec = new_coe;
+		trap->pstate->files[fd]->close_on_exec = new_coe;
 		break;
 	}
 	default:
@@ -563,7 +569,7 @@ bool on_chdir(syscall_mod *trap, bool do_fdlookup) {
 			trap->set_return(-EBADF);
 			return true;
 		}
-		new_work_dir = search->second.path;
+		new_work_dir = search->second->path;
 		PRINT_DEBUG("Looked up: fd %d => '%s'\n", fd, new_work_dir.c_str());
 	}
 	else {

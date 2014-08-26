@@ -86,7 +86,27 @@ process_state::process_state(std::string cwd, int argc, char **argv)
 	syscall_count(0)
 {}
 
-process_state::~process_state() {}
+process_state::~process_state() {
+	for (auto file : this->files) {
+		this->close_fd(file.first);
+	}
+}
+
+bool process_state::close_fd(int id) {
+	auto search = this->files.find(id);
+	if (search != this->files.end()) {
+		struct file_state *fstate = search->second;
+		fstate->fd_ids.erase(id);
+		if (fstate->fd_ids.size() == 0) {
+			delete fstate;
+		}
+		this->files.erase(id);
+		PRINT_DEBUG("closed virtual fd %d\n", id);
+		return true;
+	} else {
+		return false;
+	}
+}
 
 struct decision process_state::redirect_decision(struct syscall_mod *trap) {
 	if (print_syscalls) {
@@ -242,7 +262,7 @@ struct decision process_state::redirect_decision(struct syscall_mod *trap) {
 		}
 
 		if (fd >= 0) {
-			if (fd < FILE_DESCRIPTOR_OFFSET) {
+			if (trap->pstate->files.find(fd) == trap->pstate->files.end()) {
 				PRINT_DEBUG("\tfd %d on host.\n", fd);
 				ret.redirect = false;
 			}
