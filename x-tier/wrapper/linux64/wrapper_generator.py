@@ -95,8 +95,8 @@ class CharArrayArgument(FuncArgument):
         super().__init__(name)
         self.length = length
 
-        if inout not in ("in", "out"):
-            raise Exception("buffers have to be declared in or out: %s was not." % self.name)
+        if inout not in ("in", "out", "ret"):
+            raise Exception("buffers have to be declared in, out or ret: %s was not." % self.name)
         self.inout  = inout
 
     def copy_to_stack(self, name, length):
@@ -120,26 +120,30 @@ ${stackcpy}
     stackcpy = self.copy_to_stack(self.name, self.length),
 )
 
-        elif self.inout == "out":
+        elif self.inout in ("out", "ret"):
             return Template("""
 	${stackbuffer}
 	${esp_mod} // reserve space for ${name}
-            """).substitute(
-                stackbuffer = self.stackbuffer(self.name, self.length),
-                esp_mod     = self.mod_espoffset(self.length),
-                name        = self.name,
-            )
+""").substitute(
+    stackbuffer = self.stackbuffer(self.name, self.length),
+    esp_mod     = self.mod_espoffset(self.length),
+    name        = self.name,
+)
 
     def copy_back_arg(self):
         if self.inout == "in":
             return ""
-        elif self.inout == "out":
-            # TODO: currently copies the WHOLE buffer back,
-            #       the external function might have filled less than that.
+        elif self.inout in ("out", "ret"):
+            # copy back whole buffer
+            if self.inout == "out":
+                size = self.length
+            elif self.inout == "ret":
+                size = "return_value"
+
             return Template("""
 	${memcpy}
 """).substitute(
-    memcpy=self.memcpy(self.name, self.get_asm_arg(), self.length)
+    memcpy=self.memcpy(self.name, self.get_asm_arg(), size)
 )
 
     def get_func_arg(self):
@@ -350,6 +354,8 @@ def create_args(args):
             inout = "in"
         elif "out" in atypel:
             inout = "out"
+        elif "ret" in atypel:
+            inout = "ret"
         else:
             inout = ""
 
@@ -362,7 +368,7 @@ def create_args(args):
                 # length is known, stored in variable
                 ret.append(CharArrayArgument(aname, length_var.group(1), inout))
             else:
-                if inout == "out":
+                if inout in ("out", "ret"):
                     raise Exception("output strings are not possible, you probably wanna use a buffer!")
                 # \0 terminated.
                 ret.append(StringArgument(aname, inout))
