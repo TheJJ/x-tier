@@ -26,9 +26,8 @@ arg_reg = {
 
 
 class FuncArgument:
-    def __init__(self, name, data_len):
+    def __init__(self, name):
         self.name = name
-        self.data_len = data_len
 
     def move_value(self, param_id, arg_id):
         """
@@ -70,8 +69,9 @@ class FuncArgument:
 
 
 class NumberArgument(FuncArgument):
-    def __init__(self, name):
-        super().__init__(name, 8)
+    def __init__(self, name, ntype):
+        super().__init__(name)
+        self.number_type = ntype
 
     def prepare_arg(self):
         return ""
@@ -80,10 +80,7 @@ class NumberArgument(FuncArgument):
         return ""
 
     def get_func_arg(self):
-        if self.data_len == 8:
-            return "int64_t %s" % self.name
-        else:
-            raise Exception("other than int64_t non-ptr arguments not supported")
+        return "%s %s" % (self.number_type, self.name)
 
     def get_asm_arg(self):
         return self.name
@@ -95,7 +92,7 @@ class CharArrayArgument(FuncArgument):
     """
 
     def __init__(self, name, length, inout):
-        super().__init__(name, 8)
+        super().__init__(name)
         self.length = length
 
         if inout not in ("in", "out"):
@@ -374,7 +371,7 @@ def create_args(args):
                 ret.append(CharArrayArgument(aname, length_var.group(1), inout))
             else:
                 # regular number argument
-                ret.append(NumberArgument(aname))
+                ret.append(NumberArgument(aname, atype))
 
     return ret
 
