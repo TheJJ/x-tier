@@ -255,17 +255,21 @@ struct decision process_state::redirect_decision(struct syscall_mod *trap) {
 		if (n > 0) {
 			const char *prefixes[] = {
 				"/usr/lib/",
+				"/usr/lib64/",
 				"/lib/",
 				"/lib64/",
 				"/proc/self/",
 				"/dev/tty",
+				"/dev/pts/",
 				"/etc/ld.so.cache",
+				"/usr/share/locale/",
+				"/usr/share/terminfo/",
+				"/etc/terminfo/",
 			};
 
 			const char *substrings[] = {
-				"NOFWD",
 				"terminfo",
-				"locale",
+				"NOFWD",  // custom special-keyword
 			};
 
 			bool host_path  = false;
