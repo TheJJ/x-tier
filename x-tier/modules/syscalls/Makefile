@@ -1,4 +1,4 @@
-SYSCALLS=getdents open read stat uname lstat write
+SYSCALLS=getdents open read stat uname lstat write unlink rename
 
 all: $(SYSCALLS)
 

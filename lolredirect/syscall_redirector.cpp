@@ -105,6 +105,14 @@ bool syscall_redirect(syscall_mod *trap) {
 	case SYS_dup3:
 		success = on_dup(trap, 3);
 		break;
+
+	case SYS_rename:
+		success = on_rename(trap);
+		break;
+
+	case SYS_unlink:
+		success = on_unlink(trap);
+		break;
 	}
 
 	return success;
@@ -814,9 +822,76 @@ bool on_write(syscall_mod *trap) {
 }
 
 bool on_unlink(syscall_mod *trap) {
-	throw util::Error("unlink redirection not implemented yet!");
+	int n = 0;
+	char path[max_path_len];
+
+	n = util::tstrncpy(trap, path, (const char *)trap->get_arg(0), max_path_len);
+	if (n < 0) {
+		PRINT_ERROR("failed copying path string\n");
+		return false;
+	}
+
+	if (not util::is_abspath(path)) {
+		std::string path_s = util::abspath(trap->pstate->cwd, path);
+		strncpy(path, path_s.c_str(), max_path_len);
+	}
+
+	struct injection *injection = new_injection("/tmp/unlink.inject");
+	injection_load_code(injection);
+
+	add_string_argument(injection, path);
+	injection = consolidate(injection);
+
+	PRINT_DEBUG("Trying to unlink file '%s' within the guest...\n", path);
+	struct received_data recv_data;
+	inject_module(injection, &recv_data);
+
+	free_injection(injection);
+
+	trap->set_return(recv_data.return_value);
+	return true;
 }
 
-bool on_unlinkat(syscall_mod *trap) {
-	throw util::Error("unlink redirection not implemented yet!");
+bool on_rename(syscall_mod *trap) {
+	int n = 0;
+	char oldpath[max_path_len];
+	char newpath[max_path_len];
+
+	n = util::tstrncpy(trap, oldpath, (const char *)trap->get_arg(0), max_path_len);
+	if (n < 0) {
+		PRINT_ERROR("failed copying oldpath string\n");
+		return false;
+	}
+
+	n = util::tstrncpy(trap, newpath, (const char *)trap->get_arg(1), max_path_len);
+	if (n < 0) {
+		PRINT_ERROR("failed copying newpath string\n");
+		return false;
+	}
+
+	if (not util::is_abspath(oldpath)) {
+		std::string path_s = util::abspath(trap->pstate->cwd, newpath);
+		strncpy(oldpath, path_s.c_str(), max_path_len);
+	}
+
+	if (not util::is_abspath(newpath)) {
+		std::string path_s = util::abspath(trap->pstate->cwd, newpath);
+		strncpy(newpath, path_s.c_str(), max_path_len);
+	}
+
+	struct injection *injection = new_injection("/tmp/rename.inject");
+	injection_load_code(injection);
+
+	add_string_argument(injection, oldpath);
+	add_string_argument(injection, newpath);
+	injection = consolidate(injection);
+
+	PRINT_DEBUG("Trying to rename file '%s' to '%s' within the guest...\n", oldpath, newpath);
+	struct received_data recv_data;
+	inject_module(injection, &recv_data);
+
+	free_injection(injection);
+
+	trap->set_return(recv_data.return_value);
+	return true;
 }

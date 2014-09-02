@@ -28,6 +28,6 @@ bool on_statfs(syscall_mod *trap);
 
 bool on_write(syscall_mod *trap);
 bool on_unlink(syscall_mod *trap);
-bool on_unlinkat(syscall_mod *trap);
+bool on_rename(syscall_mod *trap);
 
 #endif //_SYSCALL_HANDLER_H_

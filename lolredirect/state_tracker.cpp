@@ -238,6 +238,8 @@ struct decision process_state::redirect_decision(struct syscall_mod *trap) {
 	case SYS_getresgid:
 	case SYS_getresuid:
 	case SYS_uname:
+	case SYS_unlink:
+	case SYS_rename:
 		ret.reason   = redirect_reason::FORCED;
 		ret.redirect = true;
 		break;
