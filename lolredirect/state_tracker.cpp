@@ -34,6 +34,15 @@ const char *redirect_reason_str(struct decision d) {
 	case redirect_reason::PATH:
 		ret = "path";
 		break;
+	case redirect_reason::PATH_WHITELIST:
+		ret = "whitelisted path";
+		break;
+	case redirect_reason::PATH_PREFIX:
+		ret = "blacklisted path prefix";
+		break;
+	case redirect_reason::PATH_SUBSTRING:
+		ret = "blacklisted path substring";
+		break;
 	case redirect_reason::FD:
 		ret = "fd";
 		break;
@@ -143,6 +152,7 @@ struct decision process_state::redirect_decision(struct syscall_mod *trap) {
 		n = util::tstrncpy(trap, path, (char *)trap->get_arg(0), max_path_len);
 		break;
 
+		// arg0 is a fd
 	case SYS_write:
 	case SYS_read:
 	case SYS_close:
@@ -233,6 +243,8 @@ struct decision process_state::redirect_decision(struct syscall_mod *trap) {
 			bool host_path  = false;
 			bool guest_path = false;
 
+			ret.reason = redirect_reason::PATH;
+
 			//whitelist program invokation arguments
 			if (not host_path and not guest_path) {
 				for (int i = 1; i < this->argc; i++) {
@@ -240,6 +252,7 @@ struct decision process_state::redirect_decision(struct syscall_mod *trap) {
 
 					if (0 == strcmp(arg, path)) {
 						guest_path = true;
+						ret.reason = redirect_reason::PATH_WHITELIST;
 						break;
 					}
 				}
@@ -250,6 +263,7 @@ struct decision process_state::redirect_decision(struct syscall_mod *trap) {
 				for (auto &prefix : prefixes) {
 					if (0 == util::strpcmp(path, prefix)) {
 						host_path = true;
+						ret.reason = redirect_reason::PATH_PREFIX;
 						break;
 					}
 				}
@@ -260,6 +274,7 @@ struct decision process_state::redirect_decision(struct syscall_mod *trap) {
 				for (auto &substr : substrings) {
 					if (NULL != strstr(path, substr)) {
 						host_path = true;
+						ret.reason = redirect_reason::PATH_SUBSTRING;
 						break;
 					}
 				}
@@ -272,7 +287,6 @@ struct decision process_state::redirect_decision(struct syscall_mod *trap) {
 				PRINT_DEBUG("\tpath on guest: %s\n", path);
 				ret.redirect = true;
 			}
-			ret.reason = redirect_reason::PATH;
 		}
 
 		if (fd >= 0) {

@@ -18,6 +18,9 @@ enum class execution_section {
 
 enum class redirect_reason {
 	PATH,
+	PATH_WHITELIST,
+	PATH_PREFIX,
+	PATH_SUBSTRING,
 	FD,
 	UNHANDLED,
 	INITSECTION,
