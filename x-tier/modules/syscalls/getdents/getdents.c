@@ -22,22 +22,21 @@ struct linux_dirent {
 	char            d_name[1];
 };
 
-int getdents(char *path)
+long getdents(char *path)
 {
 	char buf[BUF_SIZE];
-	int total_read = 0;
-	int read = 0;
+	long total_read = 0;
+	long read = 0;
 
 	int fd = sys_open(path, O_RDONLY|O_DIRECTORY, 0);
 
-	// Could not open file
+	// could not open file
 	if (fd < 0) {
 		return -1;
 	}
 
-	// Read data
-	while((read = sys_getdents(fd, (struct linux_dirent *)buf, BUF_SIZE)) > 0)
-	{
+	// read all available directory entry data
+	while((read = sys_getdents(fd, (struct linux_dirent *)buf, BUF_SIZE)) > 0) {
 		// Save total read bytes for return value
 		total_read += read;
 
@@ -45,7 +44,6 @@ int getdents(char *path)
 		data_transfer(buf, read);
 	}
 
-	// Close
 	sys_close(fd);
 
 	// Total data read

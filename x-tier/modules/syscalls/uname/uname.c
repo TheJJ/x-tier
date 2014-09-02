@@ -9,7 +9,7 @@ extern int sys_newuname(struct new_utsname *name);
 long uname(void) {
 	struct new_utsname result;
 
-	int ret = sys_newuname(&result);
+	long ret = sys_newuname(&result);
 
 	data_transfer((char *)&result, sizeof(result));
 	return ret;

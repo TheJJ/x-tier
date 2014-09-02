@@ -11,12 +11,12 @@
 
 #define BUF_SIZE 1024
 
-int read(char *path, int flags, int offset, int bytes)
+long read(char *path, int flags, int offset, int bytes)
 {
 	char buf[BUF_SIZE];
-	int total_read = 0;
-	int read = 0;
-	int result = 0;
+	long total_read = 0;
+	long read = 0;
+	long result = 0;
 
 	int fd = sys_open(path, flags, 0);
 	printk("read: open %s = %d\n", path, fd);
@@ -41,14 +41,18 @@ int read(char *path, int flags, int offset, int bytes)
 		//call kernel's read function
 		read = sys_read(fd, buf, BUF_SIZE);
 
+		if (read < 0) {
+			break;
+		}
+
 		// save total read bytes for return value
 		total_read += read;
 
 		// send to hypervisor
-		printk("sending data buffer (ret=%d)...\n", read);
+		printk("sending data buffer (ret=%ld)...\n", read);
 		data_transfer(buf, read);
 
-		// Check if there is no more data
+		// check if there is no more data
 		if (read < BUF_SIZE) {
 			break;
 		}

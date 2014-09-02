@@ -10,11 +10,11 @@
 
 #define WRITE_CHUNK_SIZE 1024
 
-int write(char *path, int flags, int offset, char *buf, int bytes)
+long write(char *path, int flags, int offset, char *buf, int bytes)
 {
-	int total_written = 0;
-	int wrote = 0;
-	int result = 0;
+	long total_written = 0;
+	long wrote = 0;
+	long result = 0;
 
 	int fd = sys_open(path, flags, 0);
 	printk("write: open %s = %d\n", path, fd);
@@ -33,7 +33,7 @@ int write(char *path, int flags, int offset, char *buf, int bytes)
 
 	// start writing data
 	do {
-		int to_write;
+		size_t to_write;
 		if ((bytes - total_written) > WRITE_CHUNK_SIZE) {
 			to_write = WRITE_CHUNK_SIZE;
 		}
@@ -45,7 +45,7 @@ int write(char *path, int flags, int offset, char *buf, int bytes)
 		buf += wrote;
 
 		// call kernel's write function
-		printk("calling sys_write(fd=%d, buf=%p, count=%d):\n", fd, buf, to_write);
+		printk("calling sys_write(fd=%d, buf=%p, count=%zu):\n", fd, buf, to_write);
 		wrote = sys_write(fd, buf, to_write);
 		total_written += wrote;
 
