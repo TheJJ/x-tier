@@ -219,9 +219,9 @@ ${comment}
 unsigned long kernel_esp     __attribute__ ((section (".text"))) = 0;
 unsigned long target_address __attribute__ ((section (".text"))) = 0;
 
-long ${func_name}(${func_args}) {
+${return_type} ${func_name}(${func_args}) {
 	unsigned long esp_offset = 0;   // kernel stack allocation size
-	unsigned long return_value = 0; // function call return value
+	${return_type} return_value = 0; // function call return value
 
 	int i = 0;
 
@@ -262,11 +262,12 @@ ${args_copyback}
 }
 """)
 
-    def __init__(self, name, dest_name, args, headers):
+    def __init__(self, name, dest_name, args, headers, return_type):
         self.name      = name      # function name
         self.dest_name = dest_name # external function name to call
         self.args      = args
         self.headers   = set(headers) if headers else set()
+        self.return_type = return_type
 
     def get_code(self, opt_comment=""):
         param_id = 2 # we already got 2 asm params in the template
@@ -311,6 +312,7 @@ ${args_copyback}
             args_copyback           = args_copyback,
             retarg_id               = param_id,
             comment                 = opt_comment,
+            return_type             = self.return_type,
         )
 
         return c
@@ -378,7 +380,7 @@ def create_args(args):
 
 def main(args):
     wrapper_args = create_args(parse_func_args(args.argument))
-    w = Wrapper(args.function_name, args.jump_name, wrapper_args, args.header)
+    w = Wrapper(args.function_name, args.jump_name, wrapper_args, args.header, args.return_type)
     print(w.get_code(
         "/**\n * generated with: %s\n */\n" % (' '.join(["'%s'" % a for a in sys.argv]))
     ))
@@ -387,6 +389,7 @@ def main(args):
 if __name__ == "__main__":
     p = argparse.ArgumentParser(description='x-tier wrapper generator. generates stealty external function calling wrappers.')
     p.add_argument("-i", "--header", action='append', help="add the given header to the include list")
+    p.add_argument("-r", "--return-type", default="unsigned long", help="the return value of the wrapped function.")
     p.add_argument("function_name", help="generated function name")
     p.add_argument("jump_name", help="external function name to be called")
     p.add_argument("argument", nargs="*", help="arguments for the external function call. add vartype[len] to type to define buffer sizes.")
