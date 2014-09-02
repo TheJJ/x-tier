@@ -1,112 +1,73 @@
-/*
- * We currently cannot resolve symbols that are not located
- * in the symbol table e.g. symbols that are not exported
- * as system calls for instance. Thus we used fixed addresses
- * for now.
+
+#include "../../../tmp/sysmap.h"  // kernel symbol names
+
+/**
+ * generated with: './wrapper_generator.py' 'sys_open' 'lnx_sys_open' 'in char *filename' 'int flags' 'unsigned short mode'
  */
 
-#include "../../../tmp/sysmap.h"
-
-// The command in the command register - 42 for external function call
-#define COMMAND "$42"
-
-// The number of the command interrupt e.g. Hypercall
-#define COMMAND_INTERRUPT "$42"
-
-// Data will be patched by the shellcode
-// Place this variables into text to get a fixed offset
+// variables to be patches by injection shellcode, in .text section
 unsigned long kernel_esp     __attribute__ ((section (".text"))) = 0;
 unsigned long target_address __attribute__ ((section (".text"))) = 0;
 
-/*
- * 64-bit Calling Conventions
- *
- * 1st ARG: %RDI
- * 2nd ARG: %RSI
- * 3rd ARG: %RDX
- * 4th ARG: %RCX
- * 5th ARG: %R8
- * 6th ARG: %R9
- * 7th ARG - nth ARG: on stack from right to left
- */
+unsigned long sys_open(char *filename, int flags, unsigned short mode) {
+	unsigned long esp_offset = 0;   // kernel stack allocation size
+	unsigned long return_value = 0; // function call return value
 
-/*
- * From the kernel (fs/open.c):
- * sys_open - Open the given file
- * @filename: The pointer to the filename
- * @flags: The flags that should be used by open
- * @count: The mode that should be used by open
- *
- */
-long sys_open(const char *filename, int flags, unsigned short mode) {
-	// Stores the size of the data that has to be placed on
-	// the kernel stack
-	unsigned long esp_offset = 0;
-
-	// Stores the return value of the sys_open function
-	unsigned long open_ret = 0;
-
-	// Char count
-	int count = 0;
-
-	// COPY arguments
-	char *new_filename = 0;
-	char *tmp = (char *)filename;
 	int i = 0;
 
-	// Length of the filename?
-	while ((*tmp) != '\0') {
-		count++;
-		tmp++;
+
+	// === argument: char *filename
+	int filename_length = 1; // including \0
+	char *filename_len_tmp = (char *)filename;
+
+	while ((*filename_len_tmp) != '\0') {
+		filename_length  += 1;
+		filename_len_tmp += 1;
 	}
 
-	// Increase count to account for the NULL-byte
-	count++;
-
-	// Reserve space for the  filename on kernel stack
-	esp_offset += count;
-
-	// Change buf pointer to new value
-	new_filename = (char *)(((char *)kernel_esp) - count);
-
-	// Copy
-	for (i = 0; i < count; i++) {
-		new_filename[i] = filename[i];
+	
+	char *filename_stack_buffer = (char *)(((char *)kernel_esp) - (esp_offset + filename_length));
+	for (i = 0; i < filename_length; i++) {
+		filename_stack_buffer[i] = filename[i];
 	}
 
-	// CALL is executed
+	esp_offset += filename_length;
+	// ====
+
+
+	// store the prepared arguments to registers
+	// then ask the hypervisor to perform the external function call.
 	__asm__ volatile(
-		"mov $" SYMADDR_STR(lnx_sys_open) ", %%rbx;"               // Target Address in RBX
+		"mov $" SYMADDR_STR(lnx_sys_open) ", %%rbx;" // RBX gets jump target
 
-		// Set ARGs
-		"mov %2,   %%rdi;"             // ARG 1
-		"mov $0x0, %%rsi;"             // Clear RSI since we only write to esi
-		"mov %3,   %%esi;"             // ARG 2
-		"mov $0x0, %%rdx;"
-		"mov %4,   %%edx;"             // ARG 3
+		"mov %2, %%rdi;"  // arg 0
+		"mov %3, %%rsi;"  // arg 1
+		"mov %4, %%rdx;"  // arg 2
 
-		"mov %0, %%rax;"               // MOV orig kernel_stack into rax
-		"sub %1, %%rax;"               // Decrease the stack pointer by the amount
-		                               // of data that has been added to the kernel stack.
-		"push %%rbp;"                  // SAVE EBP
-		"mov  %%rsp, %%rbp;"           // SAVE stack pointer
-		"mov  %%rax, %%rsp;"           // Set stack pointer
-		"mov " COMMAND ", %%rax;"      // COMMAND in RAX
-		"int " COMMAND_INTERRUPT ";"   // Send command interrupt
-		"mov  %%rbp, %%rsp;"           // Restore RSP
-		"pop  %%rbp;"                  // Restore RBP
+		"mov  %0, %%rax;"      // store original kernel_stack into rax
+		"sub  %1, %%rax;"      // decrease stack ptr by allocation amount
+		"push %%rbp;"          // save EBP
+		"mov  %%rsp, %%rbp;"   // save stack pointer
+		"mov  %%rax, %%rsp;"   // set stack pointer
+		"mov  $42, %%rax;"     // select `command` as interrupt handler in RAX
+		"int  $42;"            // send interrupt, hypercall happens here
+		"mov  %%rbp, %%rsp;"   // restore RSP
+		"pop  %%rbp;"          // restore RBP
 
-		"mov  %%rax, %5;"              // Save Return value
+		"mov  %%rax, %5;"      // save return value
 		:
 		:
 		"r"(kernel_esp),
 		"r"(esp_offset),
-
-		"m"(new_filename), "m"(flags), "m"(mode), // arguments
-		"m"(open_ret) //return value
+		"m"(filename_stack_buffer), "m"(flags), "m"(mode),
+		"m"(return_value)
 		:
-		"rax", "rbx", "rdi", "rsi", "rdx");
+		"rax", "rbx", "rdi", "rsi", "rdx"
+	);
 
-	// Return to caller
-	return open_ret;
+
+
+	// return to caller
+	return return_value;
 }
+
