@@ -3,16 +3,16 @@
 #include <stdint.h>
 
 /**
- * generated with: './wrapper_generator.py' 'XTIER_vfs_lstat' 'lnx_vfs_lstat' 'in char *path' 'out char[kstat_size] kstat' 'int kstat_size'
+ * generated with: './wrapper_generator.py' '-r' 'int' 'XTIER_vfs_lstat' 'lnx_vfs_lstat' 'in char *path' 'out char[kstat_size] kstat' 'int kstat_size'
  */
 
 // variables to be patches by injection shellcode, in .text section
 unsigned long kernel_esp     __attribute__ ((section (".text"))) = 0;
 unsigned long target_address __attribute__ ((section (".text"))) = 0;
 
-long XTIER_vfs_lstat(char *path, char *kstat, int64_t kstat_size) {
+int XTIER_vfs_lstat(char *path, char *kstat, int64_t kstat_size) {
 	unsigned long esp_offset = 0;   // kernel stack allocation size
-	unsigned long return_value = 0; // function call return value
+	int return_value = 0; // function call return value
 
 	int i = 0;
 

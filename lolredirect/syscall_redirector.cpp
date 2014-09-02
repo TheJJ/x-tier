@@ -450,19 +450,19 @@ bool on_stat(syscall_mod *trap, bool do_fdlookup, bool do_at, bool do_lstat) {
 	PRINT_DEBUG("Trying to stat file '%s' -> %p...\n", stat_path, stat_result_ptr);
 	inject_module(injection, &recv_data);
 
-	struct stat *received_stat = (struct stat *)recv_data.data;
-
 	if (recv_data.return_value == 0) {
+		struct stat *received_stat = (struct stat *)recv_data.data;
 		size_t file_size = received_stat->st_size;
 		PRINT_DEBUG("file '%s' size: %zu\n", stat_path, file_size);
 	}
-	else if (recv_data.return_value < 0) {
+	else {
+		PRINT_DEBUG("stat returned: %ld\n", recv_data.return_value);
 		goto out;
 	}
 
 	if (recv_data.length != sizeof(struct stat)) {
 		free_injection(injection);
-		throw util::Error("recieved wrong struct stat size!");
+		throw util::Error("recieved wrong struct stat size: %d != %zu", recv_data.length, sizeof(struct stat));
 	}
 
 	PRINT_DEBUG("recv_data %p\n", &recv_data);

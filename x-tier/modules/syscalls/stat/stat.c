@@ -12,10 +12,11 @@
 
 #define BUF_SIZE 4096
 
-extern long XTIER_vfs_stat(char *path, char *kstat, int kstat_size);
-extern long cp_new_stat(struct kstat *k, struct stat *s, int kstat_size);
+// custom wrapper functions:
+extern int XTIER_vfs_stat(char *path, char *kstat, int kstat_size);
+extern int cp_new_stat(struct kstat *k, struct stat *s, int kstat_size);
 
-int stat(char *path)
+long stat(char *path)
 {
 	struct stat s;
 	struct kstat k;
@@ -30,11 +31,7 @@ int stat(char *path)
 	if (result != 0) {
 		return result;
 	} else {
-		// Convert kstat struct to stat struct
-		printk("UID %d\n", k.uid.val);
 		result = cp_new_stat(&k, &s, sizeof(struct kstat));
-		printk("new UID %d\n", s.st_uid);
-		printk("transfering back the stat struct...\n");
 		data_transfer((char *)&s, sizeof(struct stat));
 		return result;
 	}

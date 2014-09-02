@@ -12,11 +12,11 @@
 
 #define BUF_SIZE 4096
 
-// wrapper functions:
-extern long XTIER_vfs_lstat(char *path, char *kstat, int kstat_size);
-extern long cp_new_stat(struct kstat *k, struct stat *s, int kstat_size);
+// custom wrapper functions:
+extern int XTIER_vfs_lstat(char *path, char *kstat, int kstat_size);
+extern int cp_new_stat(struct kstat *k, struct stat *s, int kstat_size);
 
-int lstat(char *path)
+long lstat(char *path)
 {
 	struct stat s;
 	struct kstat k;
@@ -27,10 +27,12 @@ int lstat(char *path)
 	result = XTIER_vfs_lstat(path, (char *)&k, sizeof(struct kstat));
 
 	if (result != 0) {
+		printk("lstat failed with %d\n", result);
 		return result;
 	} else {
 		result = cp_new_stat(&k, &s, sizeof(struct kstat));
 		data_transfer((char *)&s, sizeof(struct stat));
+		printk("lstat result: %d\n", result);
 		return result;
 	}
 }
