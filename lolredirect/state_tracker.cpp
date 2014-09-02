@@ -179,25 +179,53 @@ struct decision process_state::redirect_decision(struct syscall_mod *trap) {
 		possibly_redirect = false;
 		break;
 
-		//unimplemented syscalls:
+		//unimplemented, but interesting syscalls:
 	case SYS_clock_getres:
 	case SYS_clock_gettime:
+	case SYS_timer_gettime:
+	case SYS_timer_getoverrun:
 	case SYS_faccessat:
 	case SYS_fchmodat:
 	case SYS_fchownat:
 	case SYS_futimesat:
-	case SYS_getxattr:
 	case SYS_ioctl:
+
+	case SYS_getxattr:
 	case SYS_lgetxattr:
+	case SYS_fgetxattr:
+	case SYS_setxattr:
+	case SYS_lsetxattr:
+	case SYS_fsetxattr:
+	case SYS_removexattr:
+	case SYS_lremovexattr:
+	case SYS_fremovexattr:
+	case SYS_listxattr:
+	case SYS_llistxattr:
+	case SYS_flistxattr:
+
 	case SYS_linkat:
 	case SYS_mkdirat:
 	case SYS_mknodat:
 	case SYS_readlink:
 	case SYS_readlinkat:
+	case SYS_readv:
 	case SYS_renameat:
+	case SYS_statfs:
+	case SYS_fstatfs:
 	case SYS_symlinkat:
-	case SYS_unlink:
 	case SYS_unlinkat:
+	case SYS_ustat:
+
+	case SYS_getrusage:
+	case SYS_capget:
+	case SYS_gettimeofday:
+	case SYS_getgroups:
+	case SYS_getpriority:
+	case SYS_getitimer:
+	case SYS_get_kernel_syms:
+	case SYS_get_mempolicy:
+	case SYS_getcpu:
+
 		possibly_redirect = false;
 		break;
 
