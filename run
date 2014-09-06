@@ -19,7 +19,7 @@ diskimage=xshell-debian.qcow2
 processors=1
 
 
-gdb -q -ex run --args qemu/x86_64-softmmu/qemu-system-x86_64 -machine type=q35,accel=kvm -drive file=$diskimage,if=virtio -m 1024 -netdev user,id=user.0,hostfwd=tcp:127.0.0.1:9001-:22,hostfwd=tcp:127.0.0.1:9002-:1337 -device virtio-net-pci,netdev=user.0 -smp $processors -balloon virtio -virtfs local,path=data/,security_model=none,mount_tag=datadir -vga vmware -monitor telnet:127.0.0.1:8999,server -s -serial pty -serial pty
+gdb -q -ex run --args qemu/x86_64-softmmu/qemu-system-x86_64 -machine type=q35,accel=kvm -drive file=$diskimage,if=virtio -m 1024 -netdev user,id=user.0,hostfwd=tcp:127.0.0.1:9001-:22,hostfwd=tcp:127.0.0.1:9002-:1337 -device virtio-net-pci,netdev=user.0 -smp $processors -balloon virtio -virtfs local,path=data/,security_model=none,mount_tag=datadir -vga vmware -monitor telnet:127.0.0.1:8999,server -s -serial pty
 
 #ssh via:
 #ssh root@127.0.0.1 -p 9001
