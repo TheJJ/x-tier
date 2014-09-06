@@ -41,6 +41,8 @@ long read(char *path, int flags, int offset, int bytes)
 		//call kernel's read function
 		read = sys_read(fd, buf, BUF_SIZE);
 
+		printk("sys_read returned %ld\n", read);
+
 		if (read < 0) {
 			break;
 		}
