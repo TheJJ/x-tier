@@ -204,7 +204,7 @@ bool on_open(syscall_mod *trap, bool openat) {
 		trap->pstate->next_free_fd += 1;
 	}
 	else {
-		PRINT_DEBUG("Could not open file '%s'\n", path);
+		PRINT_DEBUG("Could not open file '%s', error %ld\n", path, recv_data.return_value);
 		trap->set_return(recv_data.return_value);
 	}
 	return true;
@@ -248,21 +248,23 @@ bool on_read(syscall_mod *trap) {
 
 	inject_module(injection, &recv_data);
 
-	PRINT_DEBUG("read() returned %d when reading file '%s'\n", buf_size, fs->path.c_str());
+	PRINT_DEBUG("read() returned %ld when reading file '%s'\n", recv_data.return_value, fs->path.c_str());
 
 	if (recv_data.return_value > buf_size) {
 		throw util::Error("read %ld bytes, but buffer is only %d big! aborting", recv_data.return_value, buf_size);
 	}
-	else if (recv_data.return_value >= 0) {
-		int n = util::tmemcpy(trap, buf, recv_data.data, recv_data.return_value, true);
-
-		if (n < 0) {
-			free_injection(injection);
-			throw util::Error("failed storing read data to child process!");
-		}
-
-		fs->pos += recv_data.return_value;
+	else {
 		trap->set_return(recv_data.return_value);
+
+		if (recv_data.return_value >= 0) {
+			int n = util::tmemcpy(trap, buf, recv_data.data, recv_data.return_value, true);
+
+			if (n < 0) {
+				throw util::Error("failed storing read data to child process!");
+			}
+
+			fs->pos += recv_data.return_value;
+		}
 	}
 
 	free_injection(injection);
@@ -377,7 +379,6 @@ bool on_stat(syscall_mod *trap, bool do_fdlookup, bool do_at, bool do_lstat) {
 		injection = new_injection("/tmp/stat.inject");
 		stat_type_str = "stat";
 	}
-	injection_load_code(injection);
 
 	if (do_fdlookup) {
 		int stat_fd = (int)trap->get_arg(0);
@@ -452,6 +453,7 @@ bool on_stat(syscall_mod *trap, bool do_fdlookup, bool do_at, bool do_lstat) {
 		stat_path = stat_path_buf;
 	}
 
+	injection_load_code(injection);
 	add_string_argument(injection, stat_path);
 	injection = consolidate(injection);
 
