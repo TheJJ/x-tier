@@ -38,8 +38,10 @@ class FuncArgument:
             raise Exception("stack arguments unsupported")
 
         ret = list()
-        #TODO: maybe the register needs to be null'd when writing less than 8 bytes!
-        ret.append('"mov %%%d, %%%%%s;"  // arg %d' % (param_id, arg_reg[arg_id], arg_id))
+        ret.extend([
+            '"mov $0, %%%%%s;"  // zero arg %d' % (arg_reg[arg_id], arg_id),
+            '"mov %%%d, %%%%%s;"  // prepare arg %d' % (param_id, arg_reg[arg_id], arg_id),
+        ])
 
         return ret
 
@@ -48,12 +50,12 @@ class FuncArgument:
 
     def memcpy(self, dest, src, size):
         return Template(
-"""for (i = 0; i < ${size}; i++) {
+"""for (i = 0; i < (int64_t)${size}; i++) {
 		${dest}[i] = ${src}[i];
 	}""").substitute(dest=dest, src=src, size=size)
 
     def stackbuffer(self, name, length):
-        return "char *%s_stack_buffer = (char *)(((char *)kernel_esp) - (esp_offset + %s));" % (name, length)
+        return "char *%s_stack_buffer = (char *)(kernel_esp - (esp_offset + %s));" % (name, length)
 
     def prepare_arg(self):
         raise NotImplementedError("implement in subclass")
@@ -214,6 +216,8 @@ class Wrapper:
 
     templ = Template("""
 #include "../../../tmp/sysmap.h"  // kernel symbol names
+
+#include <stdint.h>
 ${header_include}
 ${comment}
 // variables to be patches by injection shellcode, in .text section
@@ -224,8 +228,7 @@ ${return_type} ${func_name}(${func_args}) {
 	unsigned long esp_offset = 0;   // kernel stack allocation size
 	${return_type} return_value = 0; // function call return value
 
-	int i = 0;
-
+${counter_variable}
 ${args_prepare}
 
 	// store the prepared arguments to registers
@@ -260,8 +263,7 @@ ${args_copyback}
 
 	// return to caller
 	return return_value;
-}
-""")
+}""")
 
     def __init__(self, name, dest_name, args, headers, return_type):
         self.name      = name      # function name
@@ -296,10 +298,9 @@ ${args_copyback}
         clobbered_regs = ", ".join(['"%s"'    % a for a in clobbered_regs])
         to_regs        = "\n\t\t".join(to_regs)
         args_copyback  = "".join(copy_back_args)
-
-        if "int64_t" in function_args:
-            self.headers.add("<stdint.h>")
         headers        = "".join(["#include %s\n" % h for h in self.headers])
+
+        counter_var    = "int64_t i = 0;" if any((len(prepare_args), len(args_copyback))) else ""
 
         c = self.templ.substitute(
             header_include          = headers,
@@ -314,6 +315,7 @@ ${args_copyback}
             retarg_id               = param_id,
             comment                 = opt_comment,
             return_type             = self.return_type,
+            counter_variable        = counter_var
         )
 
         return c
@@ -392,7 +394,7 @@ def main(args):
 if __name__ == "__main__":
     p = argparse.ArgumentParser(description='x-tier wrapper generator. generates stealty external function calling wrappers.')
     p.add_argument("-i", "--header", action='append', help="add the given header to the include list")
-    p.add_argument("-r", "--return-type", default="unsigned long", help="the return value of the wrapped function.")
+    p.add_argument("-r", "--return-type", default="int64_t", help="the return value of the wrapped function.")
     p.add_argument("function_name", help="generated function name")
     p.add_argument("jump_name", help="external function name to be called")
     p.add_argument("argument", nargs="*", help="arguments for the external function call. add vartype[len] to type to define buffer sizes.")
