@@ -1,5 +1,6 @@
 #include "lolredirect.h"
 
+#include <attr/xattr.h>
 #include <algorithm>
 #include <fcntl.h>
 #include <sys/syscall.h>
@@ -112,6 +113,11 @@ bool syscall_redirect(syscall_mod *trap) {
 
 	case SYS_unlink:
 		success = on_unlink(trap);
+		break;
+
+	case SYS_getxattr:
+		// claim there are no xattrs for now.
+		trap->set_return(-ENOATTR);
 		break;
 	}
 

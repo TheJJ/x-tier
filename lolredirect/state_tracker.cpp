@@ -150,6 +150,7 @@ struct decision process_state::redirect_decision(struct syscall_mod *trap) {
 	case SYS_stat:
 	case SYS_lstat:
 	case SYS_chdir:
+	case SYS_getxattr:
 		n = util::tstrncpy(trap, path, (char *)trap->get_arg(0), max_path_len);
 		break;
 
@@ -191,7 +192,6 @@ struct decision process_state::redirect_decision(struct syscall_mod *trap) {
 	case SYS_futimesat:
 	case SYS_ioctl:
 
-	case SYS_getxattr:
 	case SYS_lgetxattr:
 	case SYS_fgetxattr:
 	case SYS_setxattr:
