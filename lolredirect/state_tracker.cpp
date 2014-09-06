@@ -141,6 +141,7 @@ struct decision process_state::redirect_decision(struct syscall_mod *trap) {
 
 	//disable redirection by default
 	struct decision ret{false};
+	ret.reason = redirect_reason::UNHANDLED;
 	bool possibly_redirect = true;
 
 	//gather information about the trapped syscall
