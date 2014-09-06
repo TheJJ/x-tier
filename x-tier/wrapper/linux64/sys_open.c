@@ -1,6 +1,8 @@
 
 #include "../../../tmp/sysmap.h"  // kernel symbol names
 
+#include <stdint.h>
+
 /**
  * generated with: './wrapper_generator.py' 'sys_open' 'lnx_sys_open' 'in char *filename' 'int flags' 'unsigned short mode'
  */
@@ -9,11 +11,11 @@
 unsigned long kernel_esp     __attribute__ ((section (".text"))) = 0;
 unsigned long target_address __attribute__ ((section (".text"))) = 0;
 
-unsigned long sys_open(char *filename, int flags, unsigned short mode) {
+int64_t sys_open(char *filename, int flags, unsigned short mode) {
 	unsigned long esp_offset = 0;   // kernel stack allocation size
-	unsigned long return_value = 0; // function call return value
+	int64_t return_value = 0; // function call return value
 
-	int i = 0;
+	int64_t i = 0;
 
 
 	// === argument: char *filename
@@ -26,8 +28,8 @@ unsigned long sys_open(char *filename, int flags, unsigned short mode) {
 	}
 
 	
-	char *filename_stack_buffer = (char *)(((char *)kernel_esp) - (esp_offset + filename_length));
-	for (i = 0; i < filename_length; i++) {
+	char *filename_stack_buffer = (char *)(kernel_esp - (esp_offset + filename_length));
+	for (i = 0; i < (int64_t)filename_length; i++) {
 		filename_stack_buffer[i] = filename[i];
 	}
 
@@ -40,9 +42,12 @@ unsigned long sys_open(char *filename, int flags, unsigned short mode) {
 	__asm__ volatile(
 		"mov $" SYMADDR_STR(lnx_sys_open) ", %%rbx;" // RBX gets jump target
 
-		"mov %2, %%rdi;"  // arg 0
-		"mov %3, %%rsi;"  // arg 1
-		"mov %4, %%rdx;"  // arg 2
+		"mov $0, %%rdi;"  // zero arg 0
+		"mov %2, %%rdi;"  // prepare arg 0
+		"mov $0, %%rsi;"  // zero arg 1
+		"mov %3, %%rsi;"  // prepare arg 1
+		"mov $0, %%rdx;"  // zero arg 2
+		"mov %4, %%rdx;"  // prepare arg 2
 
 		"mov  %0, %%rax;"      // store original kernel_stack into rax
 		"sub  %1, %%rax;"      // decrease stack ptr by allocation amount

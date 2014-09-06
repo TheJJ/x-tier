@@ -5,7 +5,7 @@ wrappers_elf = $(patsubst %,%.elf,$(wrappers))
 all: $(wrappers_elf) wrappers.txt
 
 %.elf: %.c
-	$(CC) -g -static -nostartfiles $< -o $@
+	$(CC) -g -std=c99 -static -nostartfiles -Wall -Wextra -pedantic $< -o $@
 
 wrappers.txt:
 	@rm -f $@

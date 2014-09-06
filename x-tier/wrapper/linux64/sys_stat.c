@@ -1,120 +1,83 @@
-/*
- * We currently cannot resolve symbols that are not located
- * in the symbol table e.g. symbols that are not exported
- * as system calls for instance. Thus we used fixed addresses
- * for now.
- */
 
-#include "../../../tmp/sysmap.h"
+#include "../../../tmp/sysmap.h"  // kernel symbol names
+
+#include <stdint.h>
 #include <asm/stat.h>
 
-// The command in the command register - 42 for external function call
-#define COMMAND "$42"
+/**
+ * generated with: './wrapper_generator.py' '-i' '<asm/stat.h>' 'sys_stat' 'lnx_sys_stat' 'in char *filename' 'out char*[sizeof(struct __old_kernel_stat)] statbuf'
+ */
 
-// The number of the command interrupt e.g. Hypercall
-#define COMMAND_INTERRUPT "$42"
-
-#define STAT struct __old_kernel_stat
-
-// Data will be patched by the shellcode
-// Place this variables into text to get a fixed offset
+// variables to be patches by injection shellcode, in .text section
 unsigned long kernel_esp     __attribute__ ((section (".text"))) = 0;
 unsigned long target_address __attribute__ ((section (".text"))) = 0;
 
-/*
- * 64-bit Calling Conventions
- *
- * 1st ARG: %RDI
- * 2nd ARG: %RSI
- * 3rd ARG: %RDX
- * 4th ARG: %RCX
- * 5th ARG: %R8
- * 6th ARG: %R9
- * 7th ARG - nth ARG: on stack from right to left
- */
+int64_t sys_stat(char *filename, char *statbuf) {
+	unsigned long esp_offset = 0;   // kernel stack allocation size
+	int64_t return_value = 0; // function call return value
 
-/*
- * From the kernel (fs/stat.c):
- * sys_stat - Get information about a file
- * @path: The path to the file.
- * @stat: Stat structure that will contain the results.
- *
- */
-long sys_stat(char *path, STAT *stat)
-{
-	// Stores the size of the data that has to be placed on
-	// the kernel stack
-	unsigned long esp_offset = 0;
+	int64_t i = 0;
 
-	// Stores the return value of the sys_getdents function
-	unsigned long stat_ret = 0;
 
-	// Loop counter
-	int i;
+	// === argument: char *filename
+	int filename_length = 1; // including \0
+	char *filename_len_tmp = (char *)filename;
 
-	// Helper
-	char *tmp = path;
-
-	// COPY arguments
-	char *new_path = 0;
-	unsigned int path_len = 0;
-	unsigned long new_stat = 0;
-
-	// Length of the filename?
-	while ((*tmp) != '\0') {
-		path_len++;
-		tmp++;
+	while ((*filename_len_tmp) != '\0') {
+		filename_length  += 1;
+		filename_len_tmp += 1;
 	}
 
-	// Increase count to account for the NULL-byte
-	path_len++;
-
-	// Reserve space for the path and the stat buffer
-	esp_offset += path_len;
-	esp_offset += sizeof(STAT);
-	// Change pointer to new values
-	new_path = (char *)(kernel_esp - path_len);
-	new_stat = kernel_esp - esp_offset;
-
-	// Copy path
-	for (i = 0; i < path_len; i++) {
-		new_path[i] = path[i];
+	
+	char *filename_stack_buffer = (char *)(kernel_esp - (esp_offset + filename_length));
+	for (i = 0; i < (int64_t)filename_length; i++) {
+		filename_stack_buffer[i] = filename[i];
 	}
 
-	// CALL is executed
+	esp_offset += filename_length;
+	// ====
+
+	char *statbuf_stack_buffer = (char *)(kernel_esp - (esp_offset + sizeof(struct __old_kernel_stat)));
+	esp_offset += sizeof(struct __old_kernel_stat); // reserve space for statbuf
+
+
+	// store the prepared arguments to registers
+	// then ask the hypervisor to perform the external function call.
 	__asm__ volatile(
-		"mov $" SYMADDR_STR(lnx_sys_stat) ", %%rbx;" // Target Address in RBX
-		                               // Set ARGs
-		"mov %2, %%rdi;"               // ARG 1
-		"mov %3, %%rsi;"               // ARG 2
+		"mov $" SYMADDR_STR(lnx_sys_stat) ", %%rbx;" // RBX gets jump target
 
-		"mov %0, %%rax;"               // MOV orig kernel_stack into rax
-		"sub %1, %%rax;"               // Decrease the stack pointer by the amount
-		                               // of data that has been added to the kernel stack.
-		"push %%rbp;"                  // SAVE EBP
-		"mov %%rsp, %%rbp;"            // SAVE stack pointer
-		"mov %%rax, %%rsp;"            // Set stack pointer
-		"mov " COMMAND ", %%rax;"      // COMMAND in RAX
-		"int " COMMAND_INTERRUPT ";"   // Send command interrupt
-		"mov %%rbp, %%rsp;"            // Restore RSP
-		"pop %%rbp;"                   // Restore RBP
-		// Save Return value
-		"mov %%rax, %4;"
+		"mov $0, %%rdi;"  // zero arg 0
+		"mov %2, %%rdi;"  // prepare arg 0
+		"mov $0, %%rsi;"  // zero arg 1
+		"mov %3, %%rsi;"  // prepare arg 1
+
+		"mov  %0, %%rax;"      // store original kernel_stack into rax
+		"sub  %1, %%rax;"      // decrease stack ptr by allocation amount
+		"push %%rbp;"          // save EBP
+		"mov  %%rsp, %%rbp;"   // save stack pointer
+		"mov  %%rax, %%rsp;"   // set stack pointer
+		"mov  $42, %%rax;"     // select `command` as interrupt handler in RAX
+		"int  $42;"            // send interrupt, hypercall happens here
+		"mov  %%rbp, %%rsp;"   // restore RSP
+		"pop  %%rbp;"          // restore RBP
+
+		"mov  %%rax, %4;"      // save return value
 		:
 		:
 		"r"(kernel_esp),
 		"r"(esp_offset),
-
-		"m"(new_path), "m"(new_stat), //args
-		"m"(stat_ret) //return value
+		"m"(filename_stack_buffer), "m"(statbuf_stack_buffer),
+		"m"(return_value)
 		:
-		"rax", "rbx", "rdi", "rsi", "rdx");
+		"rax", "rbx", "rdi", "rsi"
+	);
 
-	// Copy the data back
-	for (i = 0; i < sizeof(STAT); i++) {
-		((char*)stat)[i] = ((char *)new_stat)[i];
+
+	for (i = 0; i < (int64_t)sizeof(struct __old_kernel_stat); i++) {
+		statbuf[i] = statbuf_stack_buffer[i];
 	}
 
-	// Return to caller
-	return stat_ret;
+
+	// return to caller
+	return return_value;
 }

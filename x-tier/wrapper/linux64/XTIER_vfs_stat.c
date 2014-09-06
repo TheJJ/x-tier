@@ -1,5 +1,6 @@
 
 #include "../../../tmp/sysmap.h"  // kernel symbol names
+
 #include <stdint.h>
 
 /**
@@ -10,11 +11,11 @@
 unsigned long kernel_esp     __attribute__ ((section (".text"))) = 0;
 unsigned long target_address __attribute__ ((section (".text"))) = 0;
 
-int XTIER_vfs_stat(char *path, char *kstat, int64_t kstat_size) {
+int XTIER_vfs_stat(char *path, char *kstat, int kstat_size) {
 	unsigned long esp_offset = 0;   // kernel stack allocation size
 	int return_value = 0; // function call return value
 
-	int i = 0;
+	int64_t i = 0;
 
 
 	// === argument: char *path
@@ -27,26 +28,29 @@ int XTIER_vfs_stat(char *path, char *kstat, int64_t kstat_size) {
 	}
 
 	
-	char *path_stack_buffer = (char *)(((char *)kernel_esp) - (esp_offset + path_length));
-	for (i = 0; i < path_length; i++) {
+	char *path_stack_buffer = (char *)(kernel_esp - (esp_offset + path_length));
+	for (i = 0; i < (int64_t)path_length; i++) {
 		path_stack_buffer[i] = path[i];
 	}
 
 	esp_offset += path_length;
 	// ====
 
-	char *kstat_stack_buffer = (char *)(((char *)kernel_esp) - (esp_offset + kstat_size));
+	char *kstat_stack_buffer = (char *)(kernel_esp - (esp_offset + kstat_size));
 	esp_offset += kstat_size; // reserve space for kstat
-            
+
 
 	// store the prepared arguments to registers
 	// then ask the hypervisor to perform the external function call.
 	__asm__ volatile(
 		"mov $" SYMADDR_STR(lnx_vfs_stat) ", %%rbx;" // RBX gets jump target
 
-		"mov %2, %%rdi;"  // arg 0
-		"mov %3, %%rsi;"  // arg 1
-		"mov %4, %%rdx;"  // arg 2
+		"mov $0, %%rdi;"  // zero arg 0
+		"mov %2, %%rdi;"  // prepare arg 0
+		"mov $0, %%rsi;"  // zero arg 1
+		"mov %3, %%rsi;"  // prepare arg 1
+		"mov $0, %%rdx;"  // zero arg 2
+		"mov %4, %%rdx;"  // prepare arg 2
 
 		"mov  %0, %%rax;"      // store original kernel_stack into rax
 		"sub  %1, %%rax;"      // decrease stack ptr by allocation amount
@@ -70,7 +74,7 @@ int XTIER_vfs_stat(char *path, char *kstat, int64_t kstat_size) {
 	);
 
 
-	for (i = 0; i < kstat_size; i++) {
+	for (i = 0; i < (int64_t)kstat_size; i++) {
 		kstat[i] = kstat_stack_buffer[i];
 	}
 
@@ -78,4 +82,3 @@ int XTIER_vfs_stat(char *path, char *kstat, int64_t kstat_size) {
 	// return to caller
 	return return_value;
 }
-

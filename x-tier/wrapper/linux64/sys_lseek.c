@@ -1,82 +1,58 @@
-/*
- * We currently cannot resolve symbols that are not located
- * in the symbol table e.g. symbols that are not exported
- * as system calls for instance. Thus we used fixed addresses
- * for now.
+
+#include "../../../tmp/sysmap.h"  // kernel symbol names
+
+#include <stdint.h>
+
+/**
+ * generated with: './wrapper_generator.py' 'sys_lseek' 'lnx_sys_lseek' 'unsigned int fd' 'long offset' 'int whence'
  */
 
-#include "../../../tmp/sysmap.h"
-
-// The command in the command register - 42 for external function call
-#define COMMAND "$42"
-
-// The number of the command interrupt e.g. Hypercall
-#define COMMAND_INTERRUPT "$42"
-
-// Data will be patched by the shellcode
-// Place this variables into text to get a fixed offset
-unsigned long kernel_esp __attribute__ ((section (".text"))) = 0;
+// variables to be patches by injection shellcode, in .text section
+unsigned long kernel_esp     __attribute__ ((section (".text"))) = 0;
 unsigned long target_address __attribute__ ((section (".text"))) = 0;
 
-/*
- * 64-bit Calling Conventions
- *
- * 1st ARG: %RDI
- * 2nd ARG: %RSI
- * 3rd ARG: %RDX
- * 4th ARG: %RCX
- * 5th ARG: %R8
- * 6th ARG: %R9
- * 7th ARG - nth ARG: on stack from right to left
- */
+int64_t sys_lseek(unsigned int fd, long offset, int whence) {
+	unsigned long esp_offset = 0;   // kernel stack allocation size
+	int64_t return_value = 0; // function call return value
 
-/*
- * sys_lseek - Seek to the specified offset
- * @fd: The file pointer on which will be seeked
- * @off: The offset to seek to
- * @whence: From where will be seeked
- *
- */
-long sys_lseek(unsigned int fd, long offset, int whence)
-{
-	// Stores the size of the data that has to be placed on
-	// the kernel stack
-	unsigned long esp_offset = 0;
 
-	// Stores the return value of the sys_lseek function
-	long lseek_ret = 0;
 
-	// CALL is executed
+
+	// store the prepared arguments to registers
+	// then ask the hypervisor to perform the external function call.
 	__asm__ volatile(
-		"mov $" SYMADDR_STR(lnx_sys_lseek) ", %%rbx;" // Target Address in RBX
-		// set call arguments
-		"mov $0x0, %%rdi;"             // Clear RDI, since we only write to edi
-		"mov %2, %%edi;"               // ARG 1
-		"mov %3, %%rsi;"               // ARG 2
-		"mov $0x0, %%rdx;"
-		"mov %4, %%edx;"               // ARG 3
+		"mov $" SYMADDR_STR(lnx_sys_lseek) ", %%rbx;" // RBX gets jump target
 
-		"mov %0, %%rax;"               // MOV orig kernel_stack into rax
-		"sub %1, %%rax;"               // Decrease the stack pointer by the amount
-		                               // of data that has been added to the kernel stack.
-		"push %%rbp;"                  // SAVE EBP
-		"mov %%rsp, %%rbp;"            // SAVE stack pointer
-		"mov %%rax, %%rsp;"            // Set stack pointer
-		"mov " COMMAND ", %%rax;"      // COMMAND in RAX
-		"int " COMMAND_INTERRUPT ";"   // Send command interrupt
-		"mov %%rbp, %%rsp;"            // Restore RSP
-		"pop %%rbp;"                   // Restore RBP
-		"mov %%rax, %5;"               // Save Return value
+		"mov $0, %%rdi;"  // zero arg 0
+		"mov %2, %%rdi;"  // prepare arg 0
+		"mov $0, %%rsi;"  // zero arg 1
+		"mov %3, %%rsi;"  // prepare arg 1
+		"mov $0, %%rdx;"  // zero arg 2
+		"mov %4, %%rdx;"  // prepare arg 2
+
+		"mov  %0, %%rax;"      // store original kernel_stack into rax
+		"sub  %1, %%rax;"      // decrease stack ptr by allocation amount
+		"push %%rbp;"          // save EBP
+		"mov  %%rsp, %%rbp;"   // save stack pointer
+		"mov  %%rax, %%rsp;"   // set stack pointer
+		"mov  $42, %%rax;"     // select `command` as interrupt handler in RAX
+		"int  $42;"            // send interrupt, hypercall happens here
+		"mov  %%rbp, %%rsp;"   // restore RSP
+		"pop  %%rbp;"          // restore RBP
+
+		"mov  %%rax, %5;"      // save return value
 		:
 		:
 		"r"(kernel_esp),
 		"r"(esp_offset),
-
-		"m"(fd), "m"(offset), "m"(whence), //funtion arguments
-		"m"(lseek_ret) //return value
+		"m"(fd), "m"(offset), "m"(whence),
+		"m"(return_value)
 		:
-		"rax", "rbx", "rdi", "rsi", "rdx");
+		"rax", "rbx", "rdi", "rsi", "rdx"
+	);
 
-	// Return to caller
-	return lseek_ret;
+
+
+	// return to caller
+	return return_value;
 }

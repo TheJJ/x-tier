@@ -1,5 +1,7 @@
 
 #include "../../../tmp/sysmap.h"  // kernel symbol names
+
+#include <stdint.h>
 #include <sys/utsname.h>
 
 /**
@@ -10,23 +12,24 @@
 unsigned long kernel_esp     __attribute__ ((section (".text"))) = 0;
 unsigned long target_address __attribute__ ((section (".text"))) = 0;
 
-long sys_newuname(char *unamebuf) {
+int64_t sys_newuname(char *unamebuf) {
 	unsigned long esp_offset = 0;   // kernel stack allocation size
-	unsigned long return_value = 0; // function call return value
+	int64_t return_value = 0; // function call return value
 
-	int i = 0;
+	int64_t i = 0;
 
 
-	char *unamebuf_stack_buffer = (char *)(((char *)kernel_esp) - (esp_offset + sizeof(struct utsname)));
+	char *unamebuf_stack_buffer = (char *)(kernel_esp - (esp_offset + sizeof(struct utsname)));
 	esp_offset += sizeof(struct utsname); // reserve space for unamebuf
-            
+
 
 	// store the prepared arguments to registers
 	// then ask the hypervisor to perform the external function call.
 	__asm__ volatile(
 		"mov $" SYMADDR_STR(lnx_sys_newuname) ", %%rbx;" // RBX gets jump target
 
-		"mov %2, %%rdi;"  // arg 0
+		"mov $0, %%rdi;"  // zero arg 0
+		"mov %2, %%rdi;"  // prepare arg 0
 
 		"mov  %0, %%rax;"      // store original kernel_stack into rax
 		"sub  %1, %%rax;"      // decrease stack ptr by allocation amount
@@ -50,7 +53,7 @@ long sys_newuname(char *unamebuf) {
 	);
 
 
-	for (i = 0; i < sizeof(struct utsname); i++) {
+	for (i = 0; i < (int64_t)sizeof(struct utsname); i++) {
 		unamebuf[i] = unamebuf_stack_buffer[i];
 	}
 
@@ -58,4 +61,3 @@ long sys_newuname(char *unamebuf) {
 	// return to caller
 	return return_value;
 }
-
