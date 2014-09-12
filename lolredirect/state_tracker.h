@@ -25,6 +25,7 @@ enum class redirect_reason {
 	UNHANDLED,
 	INITSECTION,
 	FORCED,
+	NO_CANDIDATE,
 };
 
 const char *redirect_reason_str(redirect_reason r);

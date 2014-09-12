@@ -55,6 +55,9 @@ const char *redirect_reason_str(struct decision d) {
 	case redirect_reason::FORCED:
 		ret = "redirection forced";
 		break;
+	case redirect_reason::NO_CANDIDATE:
+		ret = "no redirection candidate";
+		break;
 	default:
 		ret = "unknown decision reason!";
 		break;
@@ -137,14 +140,15 @@ struct decision process_state::redirect_decision(struct syscall_mod *trap) {
 	int fd = -1;
 	int n  = 0;
 
+	// call was `openat`, `fstatat`, etc
 	bool at_syscall = false;
 
-	//disable redirection by default
+	// disable redirection by default
 	struct decision ret{false};
 	ret.reason = redirect_reason::UNHANDLED;
 	bool possibly_redirect = true;
 
-	//gather information about the trapped syscall
+	// gather information about the trapped syscall
 	switch (trap->syscall_id) {
 	case SYS_open:
 	case SYS_stat:
@@ -178,6 +182,11 @@ struct decision process_state::redirect_decision(struct syscall_mod *trap) {
 
 	case SYS_brk:
 		this->brk_handler.new_brk(this->syscall_id_previous, trap->get_arg(0));
+		possibly_redirect = false;
+		break;
+
+	case SYS_munmap:
+		this->state = execution_section::MAIN_RUN;
 		possibly_redirect = false;
 		break;
 
@@ -250,10 +259,12 @@ struct decision process_state::redirect_decision(struct syscall_mod *trap) {
 		possibly_redirect = false;
 	}
 
+	// main section is not reached yet.
 	if (this->state != execution_section::MAIN_RUN) {
 		possibly_redirect = false;
 	}
 
+	// syscall is a candidate, and no redirection is forced
 	if (possibly_redirect && ret.redirect == false) {
 		if (n > 0) {
 			const char *prefixes[] = {
@@ -280,7 +291,7 @@ struct decision process_state::redirect_decision(struct syscall_mod *trap) {
 
 			ret.reason = redirect_reason::PATH;
 
-			//whitelist program invokation arguments
+			// whitelist program invokation arguments
 			if (not host_path and not guest_path) {
 				for (int i = 1; i < this->argc; i++) {
 					const char *arg = this->argv[i];
@@ -293,7 +304,7 @@ struct decision process_state::redirect_decision(struct syscall_mod *trap) {
 				}
 			}
 
-			//compare for path prefixes
+			// compare for path prefixes
 			if (not host_path and not guest_path) {
 				for (auto &prefix : prefixes) {
 					if (0 == util::strpcmp(path, prefix)) {
@@ -304,7 +315,7 @@ struct decision process_state::redirect_decision(struct syscall_mod *trap) {
 				}
 			}
 
-			//compare for any substring
+			// compare for any substring
 			if (not host_path and not guest_path) {
 				for (auto &substr : substrings) {
 					if (NULL != strstr(path, substr)) {
@@ -340,8 +351,9 @@ struct decision process_state::redirect_decision(struct syscall_mod *trap) {
 			ret.redirect = true;
 			ret.reason = redirect_reason::FD;
 		};
-	} else if (ret.redirect == false) {
-		ret.reason   = redirect_reason::UNHANDLED;
+	} else {
+		// syscall was no redirection candidate.
+		ret.reason = redirect_reason::NO_CANDIDATE;
 	}
 
 	trap->pstate->syscall_count += 1;
