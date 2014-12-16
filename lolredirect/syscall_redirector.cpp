@@ -23,6 +23,7 @@ bool syscall_redirect(syscall_mod *trap) {
 	case SYS_getegid:
 	case SYS_getresgid:
 	case SYS_getresuid:
+	case SYS_access:
 		trap->set_return(0);
 		break;
 
@@ -805,7 +806,7 @@ bool on_write(syscall_mod *trap) {
 		add_int_argument(injection, write_bytes);
 		injection = consolidate(injection);
 
-		PRINT_DEBUG("Writing chunk %d, size %d\n", write_chunk, write_bytes);
+		PRINT_DEBUG("Writing chunk %d, size %d, %zu left\n", write_chunk, write_bytes, bytes_left);
 		inject_module(injection, &recv_data);
 
 		written = recv_data.return_value;

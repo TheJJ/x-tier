@@ -15,10 +15,10 @@ if __name__ == "__main__":
 
     args = p.parse_args()
 
-    print("starting time measurement of %s" % args.argument)
+    sys.stderr.write("starting time measurement of %s\n" % args.argument)
 
     if args.count > 1:
-        print("-> repeating measurement %d times" % args.count)
+        sys.stderr.write("-> repeating measurement %d times\n" % args.count)
     elif args.count < 0:
         raise Exception("uhm, a negative repeat count... %d" % args.count)
 
@@ -62,6 +62,6 @@ if __name__ == "__main__":
         errfile.close()
 
     if args.count > 1:
-        print("total execution time:\n%f" % duration)
-    print("execution time: (%d run%s)" % (args.count, "" if args.count == 1 else "s"))
-    print("%f s" % (duration / args.count))
+        sys.stderr.write("total execution time:\n%f\n" % duration)
+    sys.stderr.write("execution time: (%d run%s)\n" % (args.count, "" if args.count == 1 else "s"))
+    sys.stderr.write("%f s\n" % (duration / args.count))

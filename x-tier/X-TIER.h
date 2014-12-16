@@ -31,6 +31,9 @@ typedef unsigned long long u64;
 /* Tracing Modes */
 #define XTIER_HLT_EXIT 1ULL << 35
 #define XTIER_EXCEPTION_EXIT 1ULL << 36
+#define XTIER_CR3_EXIT 1ULL << 37
+#define XTIER_CAPTURE_IDLE 1ULL << 60  // store the cr3 for the idle task
+#define XTIER_AVOID_IDLE 1ULL << 61    // postpone injections for idletask cr3
 #define XTIER_CODE_INJECTION 1ULL << 62
 #define XTIER_STOP_VM_AFTER_EVENT 1ULL << 63
 
@@ -57,6 +60,8 @@ typedef unsigned long long u64;
 #define XTIER_IOCTL_INJECT_GET_PERFORMANCE 1352
 #define XTIER_IOCTL_INJECT_SET_AUTO_INJECT 1353
 #define XTIER_IOCTL_INJECT_SET_TIME_INJECT 1354
+#define XTIER_IOCTL_INJECT_CAPTURE_IDLE_CR3 1355
+#define XTIER_IOCTL_INJECT_AVOID_IDLE_CR3 1356
 
 /* X-TIER MEMORY AREA */
 // Make sure this stays under 32 bits, since 32-bit paging only supports 32 bit physical addresses.
@@ -147,6 +152,7 @@ struct XTIER_state
 {
 	u64 mode;
 	u32 os;
+	size_t idle_cr3;
 };
 
 /**
@@ -173,6 +179,7 @@ struct XTIER_performance
 	u32 temp_removals;
 	u32 hypercalls;
 	int64_t return_value;               // injection return value
+	size_t cr3;                         // cr3 value when injection was started
 };
 
 /**

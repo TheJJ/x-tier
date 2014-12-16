@@ -1,4 +1,4 @@
-# x-shell makefile
+# x-tier makefile
 #
 # compile the kernel and qemu
 
@@ -16,7 +16,7 @@ wrapper_path = x-tier/wrapper/linux64/
 #pass sysmap filename as parameter pls
 SYSMAP = /pass/me/pls
 
-all: emulator kernel arrshell libinject lolredirect
+all: emulator kernel libinject lolredirect
 
 kernel:
 	make -j $(corecount) -C $(kernel)/ modules SUBDIRS=arch/x86/kvm/
@@ -55,8 +55,6 @@ $(parser): wrappers
 .PHONY: wrappers
 wrappers: tmp/sysmap.h
 	make -C $(wrapper_path)
-
-#(syscalls='getdents open read stat'; cd ~/devel/x-shell/x-tier/ && make -C ./parser/linux/ && for f in $syscalls; do strip -d modules/linux/syscalls/$f/$f.ko; ./parser/linux/inject-parser -i $f -o /tmp/$f.inject -d wrapper/linux64/ -w wrapper/linux64/wrappers.txt modules/linux/syscalls/$f/$f.ko; done
 
 syscalls = getdents open read stat
 injects = $(patsubst %,%.inject,$(syscalls))

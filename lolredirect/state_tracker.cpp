@@ -183,11 +183,13 @@ struct decision process_state::redirect_decision(struct syscall_mod *trap) {
 	case SYS_brk:
 		this->brk_handler.new_brk(this->syscall_id_previous, trap->get_arg(0));
 		possibly_redirect = false;
+		ret.reason = redirect_reason::NO_CANDIDATE;
 		break;
 
 	case SYS_munmap:
 		this->state = execution_section::MAIN_RUN;
 		possibly_redirect = false;
+		ret.reason = redirect_reason::NO_CANDIDATE;
 		break;
 
 		//unimplemented, but interesting syscalls:
@@ -235,7 +237,7 @@ struct decision process_state::redirect_decision(struct syscall_mod *trap) {
 	case SYS_get_kernel_syms:
 	case SYS_get_mempolicy:
 	case SYS_getcpu:
-
+		ret.reason = redirect_reason::NO_CANDIDATE;
 		possibly_redirect = false;
 		break;
 
@@ -250,6 +252,7 @@ struct decision process_state::redirect_decision(struct syscall_mod *trap) {
 	case SYS_uname:
 	case SYS_unlink:
 	case SYS_rename:
+	case SYS_access:
 		ret.reason   = redirect_reason::FORCED;
 		ret.redirect = true;
 		break;
@@ -353,7 +356,6 @@ struct decision process_state::redirect_decision(struct syscall_mod *trap) {
 		};
 	} else {
 		// syscall was no redirection candidate.
-		ret.reason = redirect_reason::NO_CANDIDATE;
 	}
 
 	trap->pstate->syscall_count += 1;

@@ -58,6 +58,13 @@ struct brk_state {
 	void new_brk(int prev_syscall_id, ssize_t arg);
 };
 
+struct ldlib_state {
+	ldlib_state(struct process_state *pstate);
+	~ldlib_state();
+
+	struct process_state *pstate;
+};
+
 struct process_state {
 	process_state(std::string cwd, int argc, char **argv);
 	~process_state();
