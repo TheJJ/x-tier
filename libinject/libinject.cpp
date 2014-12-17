@@ -18,9 +18,7 @@
 #include <fcntl.h>
 #include <errno.h>
 
-#include <QTime>
-
-#include "X-TIER/X-TIER_external_command.h"
+#include "x-tier/external_command.h"
 
 
 // qemu monitor connection vars
@@ -31,7 +29,6 @@ bool created_output_pipe = false;
 bool created_input_pipe = false;
 
 // time measurement vars
-QTime timer;
 long  tmpTime, tmpInjectionTime, tmpReceiveTime;
 long  totalExecutionTime     = 0;
 long  totalInjectionTime     = 0;
@@ -185,8 +182,6 @@ bool receive_data(struct received_data *ret) {
 	// First receive the output begin delimiter
 	while ((n = read(injection_output_fd, data_begin, data_begin_len)) == 0) {}
 
-	// Begin Time measurement
-	tmpReceiveTime = timer.elapsed();
 
 	if (n != data_begin_len) {
 		PRINT_ERROR("An error occurred while receiving the data begin marker! "
@@ -237,9 +232,6 @@ bool receive_data(struct received_data *ret) {
 	PRINT_DEBUG_FULL("Received end marker!\n");
 	PRINT_DEBUG("Data tansfer of %d bytes complete...\n", ret->length);
 
-	// Time Measurement
-	totalReceiveTime += (timer.elapsed() - tmpReceiveTime);
-
 	return true;
 }
 
@@ -257,7 +249,6 @@ bool inject_module(struct injection *injection, struct received_data *data) {
 
 	// Time measurement of the communcation
 	injectionCount++;
-	tmpTime = timer.elapsed();
 
 	if (injection->type != CONSOLIDATED) {
 		PRINT_ERROR("Injection structure is not consolidated (type: %d)!\n", injection->type);
@@ -329,9 +320,6 @@ bool inject_module(struct injection *injection, struct received_data *data) {
 	// run the injection!
 	send_monitor_command("cont\n");
 
-	// Time Measurement of the injection itself
-	tmpInjectionTime = timer.elapsed();
-
 	// Open output pipe
 	if (injection_output_fd == 0) {
 		if (!open_injection_output_pipe()) {
@@ -350,16 +338,11 @@ bool inject_module(struct injection *injection, struct received_data *data) {
 		return false;
 	}
 
-	// Time Measurement of the injection itself
-	totalInjectionTime += (timer.elapsed() - tmpInjectionTime);
-
-	//race condition here...
+	// race condition here...
 
 	// exit x-tier mode and resume vm
 	send_monitor_command("cont\n");
 
-	// Time measurement of the entire communication
-	totalCommunicationTime += (timer.elapsed() - tmpTime);
 	return true;
 }
 
@@ -368,30 +351,7 @@ void print_injection_stats(void) {
 	long s = 0;
 	long ms = 0;
 
-	totalExecutionTime = timer.elapsed();
-
-	s  = totalExecutionTime / 1000;
-	ms = totalExecutionTime - (s * 1000);
-	printf("\n Execution: %lds %ldms\n", s, ms);
-
-	s  = (totalCommunicationTime - totalInjectionTime + totalReceiveTime) / 1000;
-	ms = (totalCommunicationTime - totalInjectionTime + totalReceiveTime) - (s * 1000);
-	printf(" Communication: %lds %ldms\n", s, ms);
-
-	s  = (totalReceiveTime) / 1000;
-	ms = (totalReceiveTime) - (s * 1000);
-	printf(" Receive: %lds %ldms\n", s, ms);
-
-	s  = (totalInjectionTime - totalReceiveTime) / 1000;
-	ms = (totalInjectionTime - totalReceiveTime) - (s * 1000);
-	printf(" Injection: %lds %ldms\n", s, ms);
-	printf("\tInjections: %ld\n", injectionCount);
-
-	if (injectionCount > 0) {
-		s  = ((totalInjectionTime - totalReceiveTime) / injectionCount) / 1000;
-		ms = ((totalInjectionTime - totalReceiveTime) / injectionCount) - (s * 1000);
-		printf("\tAverage: %lds %ldms\n", s, ms);
-	}
+	printf("Injections: %ld\n", injectionCount);
 }
 
 
@@ -416,6 +376,5 @@ bool init_connection(int16_t port) {
 		return false;
 	}
 
-	timer.start();
 	return true;
 }

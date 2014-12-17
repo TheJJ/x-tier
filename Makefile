@@ -3,7 +3,7 @@
 # compile the kernel and qemu
 
 emulator  = qemu
-kernel    = linux
+kernel    = /usr/src/linux
 corecount = $(shell nproc)
 
 CFLAGS="-O2 -g -march=native"

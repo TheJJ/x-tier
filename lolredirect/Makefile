@@ -1,10 +1,9 @@
 
 CXXFLAGS = -g -O0 -std=c++11 -Wall -Werror -fPIC
 
-XTIER_DIR       = ../x-tier
 LIBINJECT_DIR   = ../libinject
 
-INCLUDEDIRS = -I$(XTIER_DIR) -I$(LIBINJECT_DIR)
+INCLUDEDIRS = -I$(LIBINJECT_DIR)
 LINKLIBS =
 LINKINJECT = -L$(LIBINJECT_DIR) -linject -Wl,-rpath $(LIBINJECT_DIR)
 
