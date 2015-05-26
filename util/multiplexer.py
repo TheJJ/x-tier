@@ -313,7 +313,7 @@ if __name__ == "__main__":
 
     signal.signal(signal.SIGINT, signal_handler)
 
-    desthost, destport = ("127.0.0.1", 8999)
+    desthost, destport = ("localhost", 8999)
 
     print("running telnet multiplexer for %s on port %d" % (desthost, destport))
 

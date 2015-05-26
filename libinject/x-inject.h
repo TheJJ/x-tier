@@ -4,8 +4,8 @@
 #include <stddef.h>
 #include <string>
 #include <cstring>
+#include <linux/xtier.h>
 
-#include "/usr/src/linux/include/uapi/linux/x-tier.h"
 #include "error.h"
 
 #define ARR_DEBUG_FULL 6

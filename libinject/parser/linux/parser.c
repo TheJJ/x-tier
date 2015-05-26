@@ -1,10 +1,3 @@
-/*
- * main.c
- *
- *  Created on: Mar 28, 2012
- *      Author: Sebastian Vogl <vogls@sec.in.tum.de>
- */
-
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>

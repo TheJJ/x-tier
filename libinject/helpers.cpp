@@ -6,7 +6,7 @@
 #include <unistd.h>
 #include <sys/stat.h>
 
-#include "/usr/src/linux/include/uapi/linux/x-tier.h"
+#include <linux/xtier.h>
 
 
 #define PRINT(fmt, ...) printf(fmt, ##__VA_ARGS__)
