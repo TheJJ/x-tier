@@ -1217,16 +1217,16 @@ int main(int argc, char *argv[]) {
 
 
 	// Print settings
-	printf("\n\t X-TIER Linux Kernel Module Parser\n");
-	printf("\t\t |_ Input File:                '%s'\n", input_file_name);
+	printf("\n X-TIER Linux Kernel Module Parser\n");
+	printf("\t |_ Input File:                '%s'\n", input_file_name);
 
 	if (init_function) {
-		printf("\t\t |_ Init Function:             '%s'\n", init_function);
+		printf("\t |_ Init Function:             '%s'\n", init_function);
 	}
 
-	printf("\t\t |_ Wrappers are specified in: '%s'\n", wrapper_filename);
-	printf("\t\t |_ Wrappers are located at:   '%s'\n", wrapper_path);
-	printf("\t\t |_ Resulting file will be:    '%s'\n\n", output_file_name);
+	printf("\t |_ Wrappers are specified in: '%s'\n", wrapper_filename);
+	printf("\t |_ Wrappers are located at:   '%s'\n", wrapper_path);
+	printf("\t |_ Resulting file will be:    '%s'\n\n", output_file_name);
 
 
 	if (elf_version(EV_CURRENT) == EV_NONE) {
