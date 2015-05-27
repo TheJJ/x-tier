@@ -9,8 +9,6 @@ corecount = $(shell nproc)
 CFLAGS="-O2 -g -march=native"
 CXXFLAGS=$(CFLAGS)
 
-parser_path  = libinject/parser/linux/
-parser       = $(parser_path)/inject-parser
 wrapper_path = x-tier/wrapper/linux64/
 
 #pass sysmap filename as parameter pls
@@ -41,28 +39,9 @@ run: kernel emulator
 
 .PHONY: configure run arrshell libinject lolredirect
 
-
 tmp:
 	@mkdir -p tmp/
 
 tmp/sysmap.h: util/sysmap.py tmp
 	./$< --create-strings $(SYSMAP) $@
-
-.PHONY: $(parser)
-$(parser): wrappers
-	make -C $(parser_path)
-
-.PHONY: wrappers
-wrappers: tmp/sysmap.h
-	make -C $(wrapper_path)
-
-syscalls = getdents open read stat
-injects = $(patsubst %,%.inject,$(syscalls))
-
-%.inject: x-tier/modules/syscalls/%/%.ko $(parser)
-	$(parser) -o $@ -d $(WRAPPER_DIR) -w $(WRAPPER_DIR)/wrappers.txt $<
-
-inject_files: $(parser)
-	make -C x-tier/modules/linux
-
 

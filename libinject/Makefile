@@ -8,6 +8,7 @@ LINKLIBS =
 LINKINJECT = -L. -linject -Wl,-rpath .
 
 
+PARSER_PATH = parser/linux
 
 all: inject-test
 
@@ -20,8 +21,11 @@ libinject.so: libinject.o strings.o error.o helpers.o
 %.o: %.cpp
 	$(CXX) $(CXXFLAGS) $(INCLUDEDIRS) -o $@ -c $<
 
+xparser.so:
+	$(MAKE) -C $(PARSER_PATH)
 
 clean:
+	$(MAKE) -C $(PARSER_PATH) clean
 	rm -f *.o *.so inject-test
 
 run: inject-test
