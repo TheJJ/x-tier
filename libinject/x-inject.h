@@ -86,6 +86,29 @@ struct received_data {
 };
 
 
+/**
+ * Creates a new injection structure.
+ *
+ * @param module Unique name of this injection.
+ */
+struct injection *new_injection(const char *module_name);
+
+/**
+ * Set initial values for an injection.
+ */
+void injection_init(struct injection *injection, const char *module_name);
+
+/**
+ * Load the binary data of the module that is specified by
+ * injection->module into injection->code. In case of failure
+ * injection->code will be NULL.
+ *
+ * @param injection Injection structure whose code should be loaded.
+ * @param path The file path to the code to load.
+ */
+int injection_load_code(struct injection *injection, const char *path);
+
+
 bool inject_module(struct injection *injection, struct received_data *ret);
 bool receive_data(struct received_data *ret);
 void print_injection_stats(void);

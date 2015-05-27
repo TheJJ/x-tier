@@ -8,9 +8,9 @@
 int main() {
 	init_connection(8998);
 
-	struct injection *injection = new_injection("/tmp/stat.inject");
+	struct injection *injection = new_injection("sys_stat");
 
-	injection_load_code(injection);
+	injection_load_code(injection, "/tmp/stat.inject");
 
 	const char *filename = "/etc/passwd";
 	add_string_argument(injection, filename);

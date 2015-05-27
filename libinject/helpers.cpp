@@ -8,11 +8,6 @@
 
 #include <linux/xtier.h>
 
-
-#define PRINT(fmt, ...) printf(fmt, ##__VA_ARGS__)
-#define MALLOC(x) malloc((x));
-#define FREE(x) free(x);
-
 /*
  * +=========================================================
  * |                    DEBUG
@@ -28,7 +23,7 @@
 #define DEBUG_LEVEL 6
 
 #define msg_print(level, level_string, fmt, ...)                        \
-	do { if (DEBUG_LEVEL >= level) PRINT("[ Injection - %s ] %d : %s(): " fmt, \
+	do { if (DEBUG_LEVEL >= level) printf("[ Injection - %s ] %d : %s(): " fmt, \
 	                                     level_string, __LINE__, __func__, ##__VA_ARGS__); } while (0)
 
 #define PRINT_DEBUG_FULL(fmt, ...) msg_print(INJECTION_DEBUG_FULL, "DEBUG FULL", fmt, ##__VA_ARGS__)
@@ -200,21 +195,21 @@ char *get_arg_data(struct injection *injection, struct injection_arg *arg)
 static void injection_set_module_name(struct injection *injection, const char *module)
 {
 	// Allocate name
-	injection->path_len = strlen(module) + 1;
-	injection->module_path = (char *)MALLOC(injection->path_len);
+	injection->name_len = strlen(module) + 1;
+	injection->name = (char *)malloc(injection->name_len);
 
 	// Check allocation
-	if (!injection->module_path)
+	if (!injection->name)
 	{
 		PRINT_ERROR("Could not allocated memory!\n");
 		return;
 	}
 
-	strcpy(injection->module_path, module);
+	strcpy(injection->name, module);
 }
 
 
-int injection_load_code(struct injection *injection)
+int injection_load_code(struct injection *injection, const char *path)
 {
 	struct stat stbuf;
 	FILE *file;
@@ -222,39 +217,28 @@ int injection_load_code(struct injection *injection)
 
 	// Free existing data if any
 	if (injection->code) {
-		FREE(injection->code)
+		free(injection->code);
 	}
 
-	// Make sure injection is NULL
 	injection->code = NULL;
 
-	if (!injection->module_path)
-	{
-		PRINT_ERROR("Injection structure has no module set! Cannot load code!\n");
-		return 1;
-	}
+	fd = open(path, O_RDONLY);
 
-	// Open File Descriptor
-	fd = open(injection->module_path, O_RDONLY);
-
-	if(fd < 0)
-	{
-		PRINT_ERROR("Could not open file descriptor to file %s!\n", injection->module_path);
+	if (fd < 0) {
+		PRINT_ERROR("Could not open file descriptor to file %s!\n", path);
 		return 1;
 	}
 
 	// Open file
 	file = fdopen(fd, "rb");
 
-	if (!file)
-	{
-		PRINT_ERROR("Could not open file %s!\n", injection->module_path);
+	if (!file) {
+		PRINT_ERROR("Could not open file %s!\n", path);
 		return 1;
 	}
 
 	// Get length of the file
-	if (fstat(fd, &stbuf) == -1)
-	{
+	if (fstat(fd, &stbuf) == -1) {
 		PRINT_ERROR("Could not obtain the size of the file!\n");
 		return 1;
 	}
@@ -262,10 +246,9 @@ int injection_load_code(struct injection *injection)
 	injection->code_len = stbuf.st_size;
 
 	// Reserve memory
-	injection->code = (char *)MALLOC(injection->code_len + 1);
+	injection->code = (char *)malloc(injection->code_len + 1);
 
-	if (!injection->code)
-	{
+	if (!injection->code) {
 		PRINT_ERROR("Could not reserve memory!\n");
 
 		fclose(file);
@@ -273,9 +256,8 @@ int injection_load_code(struct injection *injection)
 	}
 
 	// Read file
-	if(fread(injection->code, 1, injection->code_len, file) != injection->code_len)
-	{
-		PRINT_ERROR("An error occurred while reading the injection file '%s'\n", injection->module_path);
+	if (fread(injection->code, 1, injection->code_len, file) != injection->code_len) {
+		PRINT_ERROR("An error occurred while reading the injection file '%s'\n", path);
 		return 1;
 	}
 
@@ -283,40 +265,46 @@ int injection_load_code(struct injection *injection)
 	return 0;
 }
 
-struct injection *new_injection(const char *module_name)
-{
-	struct injection *result = (struct injection *)MALLOC(sizeof(struct injection));
+
+void injection_init(struct injection *injection, const char *module_name) {
+	memset(injection, 0, sizeof(struct injection));
+
+	// set name
+	injection_set_module_name(injection, module_name);
+
+	// set type
+	injection->type = VARIABLE;
+
+	// set injection properties
+	injection->code                 = NULL;
+	injection->code_len             = 0;
+	injection->event_based          = 0;
+	injection->event_address        = NULL;
+	injection->auto_inject          = 0;
+	injection->time_inject          = 0;
+	injection->exit_after_injection = 1;
+
+	// injection arguments
+	injection->args_size     = 0;
+	injection->size_last_arg = 0;
+	injection->argc          = 0;
+	injection->argv          = NULL;
+}
+
+
+struct injection *new_injection(const char *module_name) {
+	struct injection *result = (struct injection *)malloc(sizeof(struct injection));
 
 	if (!result) {
 		PRINT_ERROR("Could not allocated memory!\n");
 		return result;
 	}
 
-	memset(result, 0, sizeof(struct injection));
-
-	// Name
-	injection_set_module_name(result, module_name);
-
-	// Set Type
-	result->type = VARIABLE;
-
-	// Generals
-	result->code                 = NULL;
-	result->code_len             = 0;
-	result->event_based          = 0;
-	result->event_address        = NULL;
-	result->auto_inject          = 0;
-	result->time_inject          = 0;
-	result->exit_after_injection = 1;
-
-	// injection arguments
-	result->args_size     = 0;
-	result->size_last_arg = 0;
-	result->argc          = 0;
-	result->argv          = NULL;
+	injection_init(result, module_name);
 
 	return result;
 }
+
 
 static void consolidated_update_pointers(struct injection *injection);
 
@@ -365,7 +353,7 @@ struct injection *injection_from_fd(int fd)
 
 	// Reserve space
 	size = injection_size(&injection);
-	result = (struct injection *)MALLOC(size);
+	result = (struct injection *)malloc(size);
 
 	if (!result) {
 		PRINT_ERROR("Could not allocated memory!\n");
@@ -393,7 +381,7 @@ struct injection *injection_from_fd(int fd)
 static struct injection_arg *new_injection_arg(void)
 {
 	size_t memsize = sizeof(struct injection_arg);
-	struct injection_arg *result = (struct injection_arg *)MALLOC(memsize);
+	struct injection_arg *result = (struct injection_arg *)malloc(memsize);
 	memset((char *)result, 0, memsize);
 
 	if (!result)
@@ -427,8 +415,8 @@ static void free_injection_args(struct injection *injection)
 			for (i = 0; i < injection->argc; ++i) {
 				next = cur->next; //remember the next
 
-				FREE(cur->data);
-				FREE(cur);
+				free(cur->data);
+				free(cur);
 
 				cur = next; //go to the next
 			}
@@ -441,11 +429,11 @@ void free_injection(struct injection *injection)
 	if (!(injection->type & (CONSOLIDATED))) {
 		//free components if injection is not consolidated
 		free_injection_args(injection);
-		FREE(injection->module_path);
-		FREE(injection->code);
+		free(injection->name);
+		free(injection->code);
 	}
 
-	FREE(injection);
+	free(injection);
 }
 
 
@@ -454,10 +442,10 @@ void free_injection_without_code(struct injection *injection)
 	if (!(injection->type & CONSOLIDATED))
 	{
 		free_injection_args(injection);
-		FREE(injection->module_path);
+		free(injection->name);
 	}
 
-	FREE(injection);
+	free(injection);
 }
 
 
@@ -474,7 +462,7 @@ unsigned int injection_size(struct injection *injection)
 	total_size += sizeof(struct injection);
 
 	// Module name
-	total_size += injection->path_len;
+	total_size += injection->name_len;
 
 	// Code len
 	total_size += injection->code_len;
@@ -555,16 +543,16 @@ static void consolidated_update_pointers(struct injection *injection)
 	}
 
 	// the module name is stored right behind the injection structure
-	if (injection->path_len) {
-		injection->module_path = ((char *)injection) + sizeof(struct injection);
+	if (injection->name_len) {
+		injection->name = ((char *)injection) + sizeof(struct injection);
 	}
 	else {
-		injection->module_path = NULL;
+		injection->name = NULL;
 	}
 
 	// the code is stored right after the module name
 	if (injection->code_len) {
-		injection->code = ((char *)injection->module_path) + injection->path_len;
+		injection->code = ((char *)injection->name) + injection->name_len;
 	}
 	else {
 		injection->code = NULL;
@@ -631,7 +619,7 @@ struct injection *consolidate_args(struct injection *injection)
 	}
 
 	// Allocate memory for arg blob
-	consolidated_data = (char *)MALLOC(injection->args_size);
+	consolidated_data = (char *)malloc(injection->args_size);
 
 	if (!consolidated_data) {
 		PRINT_ERROR("Could not allocated memory for argument data!\n");
@@ -671,7 +659,7 @@ struct injection *consolidate(struct injection *injection)
 
 	// Allocate memory for the whole injection blob
 	// this includes metadata, module name, code and arguments
-	consolidated_data = (char *)MALLOC(blob_size);
+	consolidated_data = (char *)malloc(blob_size);
 
 	if (!consolidated_data) {
 		PRINT_ERROR("Could not allocated memory!\n");
@@ -685,9 +673,9 @@ struct injection *consolidate(struct injection *injection)
 	consolidated_data += sizeof(struct injection);
 
 	// Copy Module Name
-	memcpy(consolidated_data, injection->module_path, result->path_len);
-	result->module_path = NULL;
-	consolidated_data += result->path_len;
+	memcpy(consolidated_data, injection->name, result->name_len);
+	result->name = NULL;
+	consolidated_data += result->name_len;
 
 	// Copy code
 	memcpy(consolidated_data, injection->code, result->code_len);
@@ -740,11 +728,11 @@ static void add_argument(struct injection *injection, unsigned int number,
 	// Set data
 	// We store all NUMERIC data types in 8 bytes of memory
 	if (size < 8) {
-		arg->data = (char *)MALLOC(8 * sizeof(char));
+		arg->data = (char *)malloc(8 * sizeof(char));
 		memset(arg->data, 0, 8);
 	}
 	else {
-		arg->data = (char *)MALLOC(size * sizeof(char));
+		arg->data = (char *)malloc(size * sizeof(char));
 	}
 
 	if (!arg->data) {
@@ -866,41 +854,41 @@ void print_argument_data(struct injection *injection, struct injection_arg *arg)
 	case NUMERIC:
 		switch (arg->size) {
 		case sizeof(char):
-			PRINT("\t\t DATA: %c\n", *arg_data);
+			printf("\t\t DATA: %c\n", *arg_data);
 			return;
 		case sizeof(short):
-			PRINT("\t\t DATA: %hd\n", *((short *)arg_data));
+			printf("\t\t DATA: %hd\n", *((short *)arg_data));
 			return;
 		case sizeof(int):
-			PRINT("\t\t DATA: %d\n", *((int *)arg_data));
+			printf("\t\t DATA: %d\n", *((int *)arg_data));
 			return;
 		case sizeof(long):
-			PRINT("\t\t DATA: %ld\n", *((long *)arg_data));
+			printf("\t\t DATA: %ld\n", *((long *)arg_data));
 			return;
 		default:
-			PRINT("\t\t DATA: UNKNOWN NUMERIC SIZE!\n");
+			printf("\t\t DATA: UNKNOWN NUMERIC SIZE!\n");
 			return;
 		}
 	case STRING:
-		PRINT("\t\t DATA: %s\n", arg_data);
+		printf("\t\t DATA: %s\n", arg_data);
 		return;
 	case STRUCTURE:
-		PRINT("\t\t DATA: 0x%llx\n", *((long long *)arg_data));
+		printf("\t\t DATA: 0x%llx\n", *((long long *)arg_data));
 		return;
 	default:
-		PRINT("\t\t DATA: UNDEFINED!\n");
+		printf("\t\t DATA: UNDEFINED!\n");
 		return;
 	}
 }
 
 void print_argument(struct injection *injection, struct injection_arg *arg)
 {
-	PRINT("\t ARGUMENT %d @ %p\n", arg->number, arg);
-	PRINT("\t\t TYPE: %s\n", argument_type_to_string(arg->type));
-	PRINT("\t\t SIZE: %d\n", arg->size);
-	PRINT("\t\t NEXT: %p\n", arg->next);
-	PRINT("\t\t PREV: %p\n", arg->prev);
-	PRINT("\t\t DATA @%p\n", arg->data);
+	printf("\t ARGUMENT %d @ %p\n", arg->number, arg);
+	printf("\t\t TYPE: %s\n", argument_type_to_string(arg->type));
+	printf("\t\t SIZE: %d\n", arg->size);
+	printf("\t\t NEXT: %p\n", arg->next);
+	printf("\t\t PREV: %p\n", arg->prev);
+	printf("\t\t DATA @%p\n", arg->data);
 	print_argument_data(injection, arg);
 }
 
@@ -909,8 +897,8 @@ void print_arguments(struct injection *injection)
 	struct injection_arg *arg = NULL;
 	unsigned int i = 0;
 
-	PRINT("arguments:\n");
-	PRINT("\tlen(arguments): %d (argv @ %p)\n", injection->argc, get_first_injection_arg(injection));
+	printf("arguments:\n");
+	printf("\tlen(arguments): %d (argv @ %p)\n", injection->argc, get_first_injection_arg(injection));
 
 	for (i = 0; i < injection->argc; ++i) {
 		arg = get_next_arg(injection, arg);
@@ -929,8 +917,8 @@ void print_arguments_reverse(struct injection *injection)
 	struct injection_arg *arg = NULL;
 	unsigned int i = 0;
 
-	PRINT("arguments: reverse order\n");
-	PRINT("\tlen(arguments): %d (argv @ %p)\n", injection->argc, get_first_injection_arg(injection));
+	printf("arguments: reverse order\n");
+	printf("\tlen(arguments): %d (argv @ %p)\n", injection->argc, get_first_injection_arg(injection));
 
 	for (i = 0; i < injection->argc; ++i)
 	{
@@ -947,30 +935,30 @@ void print_arguments_reverse(struct injection *injection)
 
 static void _print_injection(struct injection *injection, int order)
 {
-	PRINT("INJECTION STRUCTURE\n");
-	PRINT("===================\n");
-	PRINT("\t MODULE: %s\n", injection->module_path);
+	printf("INJECTION STRUCTURE\n");
+	printf("===================\n");
+	printf("\t MODULE: %s\n", injection->name);
 
 	if (injection->type == VARIABLE)
-		PRINT("\t TYPE: VARIABLE\n");
+		printf("\t TYPE: VARIABLE\n");
 	else if (injection->type == CONSOLIDATED_ARGS)
-		PRINT("\t TYPE: CONSOLIDATED ARGS\n");
+		printf("\t TYPE: CONSOLIDATED ARGS\n");
 	else if (injection->type == CONSOLIDATED)
-		PRINT("\t TYPE: CONSOLIDATED\n");
+		printf("\t TYPE: CONSOLIDATED\n");
 	else
-		PRINT("\t TYPE: UNDEFINED\n");
+		printf("\t TYPE: UNDEFINED\n");
 
-	PRINT("\t TOTAL SIZE: %d\n", injection_size(injection));
+	printf("\t TOTAL SIZE: %d\n", injection_size(injection));
 
-	PRINT("\t CODE:        @ 0x%p\n", injection->code);
-	PRINT("\t CODE LEN:      %d\n", injection->code_len);
-	PRINT("\t ARGUMENTS:   @ 0x%p\n", injection->argv);
-	PRINT("\t ARGS SIZE:     %d\n", injection->args_size);
-	//PRINT("\t EVENT BASED:   %d\n", injection->event_based);
-	//PRINT("\t EVENT ADDRESS: 0x%p\n", injection->event_address);
-	//PRINT("\t TIME BASED:    %d\n", injection->time_inject);
-	//PRINT("\t AUTO INJECT:   %d\n", injection->auto_inject);
-	PRINT("\t EXIT AFTER INJECTION: %d\n", injection->exit_after_injection);
+	printf("\t CODE:        @ 0x%p\n", injection->code);
+	printf("\t CODE LEN:      %d\n", injection->code_len);
+	printf("\t ARGUMENTS:   @ 0x%p\n", injection->argv);
+	printf("\t ARGS SIZE:     %d\n", injection->args_size);
+	//printf("\t EVENT BASED:   %d\n", injection->event_based);
+	//printf("\t EVENT ADDRESS: 0x%p\n", injection->event_address);
+	//printf("\t TIME BASED:    %d\n", injection->time_inject);
+	//printf("\t AUTO INJECT:   %d\n", injection->auto_inject);
+	printf("\t EXIT AFTER INJECTION: %d\n", injection->exit_after_injection);
 
 	if (order > 0)
 		print_arguments(injection);

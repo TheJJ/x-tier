@@ -6,6 +6,8 @@
 #include <syscall.h>
 #include <string.h>
 #include <time.h>
+#include <unordered_map>
+#include <string>
 
 #include <sys/stat.h>
 #include <sys/socket.h>
@@ -18,6 +20,7 @@
 #include <fcntl.h>
 #include <errno.h>
 
+// header in qemu code
 #include "x-tier/external_command.h"
 
 
@@ -35,6 +38,18 @@ long  totalInjectionTime     = 0;
 long  totalCommunicationTime = 0;
 long  totalReceiveTime       = 0;
 long  injectionCount         = 0;
+
+
+std::unordered_map<std::string, injection> injections;
+
+
+void create_injection(const char *name, const char *path) {
+	struct injection *inj = &injections[name];
+
+	injection_init(inj, name);
+	injection_load_code(inj, path);
+}
+
 
 bool create_injection_data_pipes(void) {
 	int ret = 0;
@@ -111,7 +126,7 @@ bool send_monitor_command(const char *command) {
 
 	// Send command to qemu monitor
 	// TODO: may be sending in multiple packets
-	if (send(monitor_socket, command, strlen(command), 0) != (int)strlen(command)) {
+	if (send(monitor_socket, command, strlen(command), 0) != (ssize_t)strlen(command)) {
 		PRINT_ERROR("An error occurred while transmitting the '%s' command!\n", command);
 		return false;
 	}
